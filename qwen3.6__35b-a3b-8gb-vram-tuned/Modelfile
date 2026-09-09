@@ -1,0 +1,29 @@
+# Modelfile: Qwen3.6-35B-A3B tuned for 8GB VRAM / 32GB RAM (Legion 5 Pro)
+#
+# Base assumes you already have the model pulled, e.g.:
+#   ollama pull qwen3.6:35b-a3b
+# Adjust the FROM tag below to match `ollama list` exactly if different.
+
+FROM qwen3.6:35b-a3b
+
+# --- Memory-safety parameters (see tuning-guide.md Step 1-4) ---
+
+# Cap context window. Model may default to a huge context (up to 256K),
+# which silently reserves a large KV cache even when unused. Start small.
+PARAMETER num_ctx 8192
+
+# GPU layer offload. Start conservative; increase in small steps (+4)
+# while watching `nvidia-smi` until VRAM sits ~90% used at rest.
+# 999 = "as many as fit" is Ollama's default/auto behavior — set an
+# explicit number instead since auto-detection can misjudge MoE models.
+PARAMETER num_gpu 20
+
+# Prompt-processing batch size. Lower = less peak memory during ingestion.
+PARAMETER num_batch 256
+
+# CPU threads for offloaded layers. 7945HX = 16 physical cores.
+PARAMETER num_thread 16
+
+# --- Optional sampling defaults (safe general-purpose values) ---
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
