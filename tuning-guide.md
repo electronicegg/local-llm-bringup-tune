@@ -1,5 +1,21 @@
 # Tuning Guide: Fitting Models into 8GB VRAM / 32GB RAM
 
+## Note: OLLAMA_KEEP_ALIVE=1h is a deliberate tradeoff
+This host has `OLLAMA_KEEP_ALIVE=1h` set (avoids the cold-load warm-up delay,
+~45-60s, on every request) — kept intentionally, not a bug. Consequence: the
+full model (~22GB for the Q4 35B-A3B build) stays resident in RAM/VRAM for a
+full hour after last use, stacking on top of whatever else you run in that
+window (browser, IDE, etc.). Practical guidance given this setting:
+- Be mindful of what else you open on the host within an hour of a chat
+  session — the model's memory isn't released until idle timeout or a
+  manual unload.
+- To free memory immediately without changing the global setting, unload a
+  specific model on demand: `curl http://localhost:11434/api/generate -d
+  '{"model":"<name>","keep_alive":0}'` (used earlier in this session to reset
+  baseline before testing).
+- If you hit memory pressure again, this is the first thing to check with
+  `ollama ps` — a model quietly still "warm" from an hour-old session.
+
 ## Step 0: Measure before you tune
 Before changing anything, get baseline numbers:
 ```powershell
