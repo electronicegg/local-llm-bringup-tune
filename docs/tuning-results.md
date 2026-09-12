@@ -504,3 +504,105 @@ currently registered in `ollama list`.
 Fixed a stale reference to the deleted `ctx16k` model in
 `opencode.json.example` (and the live `~/.config/opencode/opencode.json`)
 left over from before this cleanup.
+
+## Update: repo restructure + rename (`-safe` → `32k-standalone`/`64k-agentic`)
+
+Reorganized into `modelfiles/`, `configs/{copilot,opencode,ollama}/`,
+`tests/token-tests/`, `bin/`, `docs/`. Renamed the confusing `-safe` suffix:
+`ctx32k-safe` → `32k-standalone` (plain `ollama run`, not usable with
+Copilot CLI — its window can't fit the static tool overhead below), and
+`ctx64k-safe` → `64k-agentic` (the floor for tool-calling/CLI-agent use).
+Rebuilt both Ollama models under the new tags — confirmed cheap: `ollama
+create` reused all existing 22GB weight layers, only writing small new
+param/manifest layers (no re-download or re-quantization).
+
+Added `bin/copilot-agentic` and `bin/opencode-agentic` launcher scripts that
+source/point at the repo-tracked configs directly (`OPENCODE_CONFIG` env var
+for opencode, replacing a previously synced copy at
+`~/.config/opencode/opencode.json`). Added `configs/ollama/dev-server.env.sh`
+(current manual `ollama serve` env, dev/test use only — systemd is disabled
+on this host due to an NTFS `chtimes` permission issue) plus a matching
+`ollama.service.d-override.conf.sample` + README for a future real
+deployment once that's resolved.
+
+**Data loss note:** a chained shell command misfired mid-restructure and
+deleted the untracked `tests/token-tests/` artifacts from tests 01–07
+(prompt/response/monitor files, plus the `context-probe-test*.sh` driver
+scripts) — never git-tracked, not recovered. The narrative findings from
+those tests are preserved above; only the raw artifacts and driver scripts
+are gone. Test 08's prompt was recreated from session context and re-added.
+
+## Update: output-token headroom + static-overhead audit for agentic configs
+
+### Is 16,384 `num_predict` (the 64k-agentic default) enough?
+Ran the real `tests/token-tests/08-copilot-byok-test-prompt.txt` (a
+deliberately heavy "design a distributed rate limiter" prompt) directly
+against `qwen3.6:35b-a3b-64k-agentic` via `/api/generate` with the full
+16,384 budget available:
+
+| Metric | Value |
+|---|---|
+| `done_reason` | `stop` (natural, not cut off) |
+| `eval_count` (output tokens used) | **8,011 / 16,384 (49%)** |
+
+Combined with earlier natural-stop data (essay task: 5,239/16,384 = 32%;
+transformer explanation: 3,218/4,096 = 79% of a *much smaller* budget),
+**16,384 has never been hit by a natural stop in any test run so far, even
+on a deliberately heavy design-doc prompt.** Current recommendation: keep
+16,384 as-is — it's generous, not tight. No evidence yet supports raising
+it; the earlier truncation complaints were against the old 8,192 cap, not
+16,384.
+
+### Copilot CLI static overhead — decomposed
+Measured with `copilot -p "hi, just reply OK" --usage-output-file` under
+`configs/copilot/copilot-byok-64k-agentic.env`:
+
+| Configuration | `inputTokens` |
+|---|---|
+| Default (6 core tools + GitHub MCP server) | 21,505 |
+| `--disable-builtin-mcps` (MCP removed) | 14,271 |
+
+| Component | Tokens | Share |
+|---|---|---|
+| GitHub MCP server tool schemas | **7,234** | 34% |
+| System prompt + core built-in tools (bash/edit/view/grep/glob/task) | **14,271** | 66% |
+
+No CLI flag exists to strip individual built-in tool schemas (only
+permission-gating via `--allow-tool`, which doesn't shrink what's sent), so
+the 14,271 core figure can't be decomposed further without intercepting the
+raw HTTP request Copilot sends to Ollama (not done — flagged as a possible
+future deep-dive if needed).
+
+Also observed `cacheReadTokens: 8,448` on a repeat call — part of the
+static cost is served from KV cache on subsequent calls (saves compute),
+but it still counts against `num_ctx`/the context budget every time; caching
+doesn't shrink the usable window.
+
+### Skill token cost — measured directly
+Copilot skills are lazy-loaded: only each skill's `name` + `description`
+(from `SKILL.md` frontmatter) sit in the system prompt/tool listing at all
+times; the full `SKILL.md` body only loads into context when the skill is
+actually invoked. Confirmed by adding one throwaway test skill and
+re-measuring: `21,505 → 21,574` input tokens (**+69 tokens** for one
+skill). Cost scales roughly with (number of skills) × (description
+length), not skill complexity — a handful of skills is cheap; dozens would
+start to add up meaningfully against the ~44K headroom after the static
+floor.
+
+### opencode baseline — confirmed from session data
+Queried opencode's local sqlite DB (`~/.local/share/opencode/opencode.db`,
+`message` table) for a genuine cold-cache first call (no `cache.read`):
+**7,322 input tokens** — matching the earlier live-test measurement exactly.
+
+| Client | Static overhead (input tokens) |
+|---|---|
+| Copilot CLI (default: 6 core tools + GitHub MCP) | 21,505 |
+| Copilot CLI (`--disable-builtin-mcps`) | 14,271 |
+| **opencode (default toolset, no bundled MCP)** | **7,322** |
+
+opencode's baseline is roughly 1/3 of Copilot CLI's default — the lighter
+built-in toolset and lack of a bundled GitHub MCP server account for the
+difference. For local-model use specifically (where every static token
+comes out of a comparatively small context budget), **opencode is the more
+context-efficient client** of the two — worth favoring it over Copilot CLI
+when the task doesn't specifically need Copilot's GitHub MCP tooling.
