@@ -22,3 +22,11 @@ export OLLAMA_NUM_GPU=99
 export OLLAMA_MAX_VRAM=7500
 export OLLAMA_FLASH_ATTENTION=1
 export OLLAMA_NUM_PAR=1
+
+# Quantize the K/V attention cache instead of full f16 precision. Verified
+# on this host (see docs/tuning-results.md "memory footprint tuning"):
+# frees VRAM headroom that Ollama's auto-balancer spends on offloading a
+# couple more weight layers to GPU instead of CPU RAM, netting ~750MB less
+# host RSS at idle with no observed VRAM increase or quality regression in
+# testing so far.
+export OLLAMA_KV_CACHE_TYPE=q8_0

@@ -606,3 +606,70 @@ difference. For local-model use specifically (where every static token
 comes out of a comparatively small context budget), **opencode is the more
 context-efficient client** of the two — worth favoring it over Copilot CLI
 when the task doesn't specifically need Copilot's GitHub MCP tooling.
+
+## Update: host memory footprint tuning
+
+User observation: `free -h`'s "free" column dipping to ~295-500Mi looked
+worrying ahead of heavier multitasking (browser + devtools during app dev).
+
+### "free" vs "available" — not actually a problem
+```
+total   used   free   shared  buff/cache  available
+30Gi    9.0Gi  ~500Mi 392Mi   21Gi        21Gi
+```
+Linux deliberately fills spare RAM with page cache (including the mmap'd
+22GB model weight file) since unused RAM is wasted RAM — it's reclaimed
+instantly when a process needs it. **`available` is the real headroom
+metric** (~21-23GB here), not `free`. With no swap, the only real risk is
+`available` itself running low (triggering OOM-kill), not a low `free`
+number by itself.
+
+### `OLLAMA_MAX_VRAM` 7500 → 7750MB: tested live, no effect
+Killed/restarted `ollama serve` with `OLLAMA_MAX_VRAM=7750`, reloaded
+`64k-agentic`, compared against the 7500 baseline:
+
+| Config | VRAM used | CPU/GPU split | Host RSS |
+|---|---|---|---|
+| `MAX_VRAM=7500` (baseline) | 7,012 MiB | 81%/19% | ~22.5 GiB |
+| `MAX_VRAM=7750` | 7,054 MiB | 78%/22% | ~21.7 GiB |
+
+Identical to the q8_0-only result below — meaning the 250MB bump itself
+contributed nothing; GPU layer offload is gated by whole-layer granularity
+(a layer can't be partially offloaded), not by how much cap headroom
+exists above what's already used. **Not recommended**: no measured
+benefit, and it would cost desktop/browser GPU headroom (free VRAM was
+already only ~795MiB out of 8,188MiB total) for nothing. Reverted to 7500.
+
+### `OLLAMA_KV_CACHE_TYPE=q8_0` — real win, applied
+Ollama supports quantizing the K/V attention cache (default `f16`). Tested
+by restarting `ollama serve` with `OLLAMA_KV_CACHE_TYPE=q8_0` and reloading
+the model:
+
+| Config | VRAM used | CPU/GPU split | Host RSS (llama-server) |
+|---|---|---|---|
+| f16 (default, baseline) | 7,012 MiB | 81%/19% | ~22.5 GiB |
+| **q8_0** | 7,054 MiB (~same) | **78%/22%** | **~21.7 GiB (−750MB)** |
+
+VRAM usage stayed essentially flat, but the smaller KV-cache buffer freed
+enough VRAM headroom for Ollama's auto-balancer to shift a couple more
+weight layers from CPU→GPU — same VRAM budget, less CPU-side weight
+storage, ~750MB lower host RSS at idle. Also tested with a 30K-token filler
+prompt pushed through context: VRAM stayed flat (the KV-cache buffer is
+pre-allocated for the full `num_ctx` at load time, not grown incrementally)
+and RSS grew by only ~350MB for 30K tokens of live context — confirms the
+quantized cache keeps incremental context growth cheap too.
+
+No quality regression observed in testing so far (q8_0 K/V is a widely-used,
+low-risk setting in the llama.cpp ecosystem). **Applied**: added to
+`configs/ollama/dev-server.env.sh` and the systemd override sample; current
+running server has it active.
+
+### Other RAM-reduction levers considered, not (yet) changed
+- **Lower `OLLAMA_KEEP_ALIVE`** below 30m would free the ~9GB idle
+  footprint sooner when not actively using a model — tradeoff is reload
+  latency on next use. Left as-is; revisit if idle RAM pressure becomes a
+  real problem (not yet observed).
+- **Host-level, non-LLM RAM use**: `ps aux` showed multiple Steam/
+  steamwebhelper zygote processes consuming a non-trivial combined RSS
+  during this session — unrelated to the LLM stack, but worth closing
+  during heavier dev-session multitasking if `available` ever gets tight.
