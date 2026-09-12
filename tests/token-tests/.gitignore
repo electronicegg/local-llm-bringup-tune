@@ -1,0 +1,8 @@
+# Track only test scripts and prompt inputs; ignore generated
+# response/output/monitor artifacts (transient, regenerable by re-running
+# the scripts against a model).
+*
+!.gitignore
+!*.sh
+!*-prompt*
+!*-prompt*/

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/opencode-agentic — launches opencode using the repo-tracked config
+# (configs/opencode/opencode.json.example) via OPENCODE_CONFIG, instead of
+# relying on a synced copy at ~/.config/opencode/opencode.json.
+#
+# Usage: bin/opencode-agentic [opencode args...]
+
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+export OPENCODE_CONFIG="$REPO_ROOT/configs/opencode/opencode.json.example"
+
+exec opencode "$@"

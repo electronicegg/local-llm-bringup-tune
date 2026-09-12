@@ -1,0 +1,19 @@
+# configs/ollama/ollama.service.d-override.conf.sample — systemd drop-in
+# applying the same tuning as dev-server.env.sh, for a *real* deployment
+# (i.e. once the host-side NTFS chtimes permission issue is resolved or the
+# model store is moved off NTFS — see README.md in this directory).
+#
+# Install as:
+#   sudo mkdir -p /etc/systemd/system/ollama.service.d
+#   sudo cp ollama.service.d-override.conf.sample \
+#       /etc/systemd/system/ollama.service.d/override.conf
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart ollama
+
+[Service]
+Environment="OLLAMA_MODELS=/mnt/windows11/Users/nikko/.ollama/models"
+Environment="OLLAMA_KEEP_ALIVE=30m"
+Environment="OLLAMA_NUM_GPU=99"
+Environment="OLLAMA_MAX_VRAM=7500"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+Environment="OLLAMA_NUM_PAR=1"

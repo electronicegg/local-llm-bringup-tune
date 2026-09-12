@@ -1,0 +1,15 @@
+Design a distributed rate limiter for a multi-region API gateway handling
+100k requests/second. Cover:
+
+1. Algorithm choice (token bucket vs sliding window vs leaky bucket) and why,
+   given cross-region consistency requirements.
+2. How you'd shard/replicate the rate-limit counters across regions without a
+   single point of failure, and how you'd handle clock skew.
+3. What happens during a network partition between regions — fail-open vs
+   fail-closed tradeoffs, and how you'd decide per-endpoint.
+4. A rough data model for the counters (e.g. Redis) and eviction/TTL scheme.
+5. How you'd test this system for correctness under load and partition
+   scenarios (mention specific test types, not just "write tests").
+
+Be thorough — this is a design doc, not a summary. Include reasoning for
+each tradeoff, not just conclusions.

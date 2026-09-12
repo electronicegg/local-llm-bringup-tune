@@ -1,0 +1,41 @@
+# Modelfile: Qwen3.6-35B-A3B, 64K context — "64k-agentic" tuning, the
+# recommended floor for agentic CLI use (Copilot CLI, opencode) via BYOK/
+# Ollama. "Agentic" here means tool-calling/multi-step-action use, as
+# opposed to plain single-turn chat.
+#
+# Why 64K and not 32K: Copilot CLI's own static overhead (system prompt +
+# all built-in tool schemas — bash, edit, view, grep, glob, task, plus the
+# GitHub MCP server) measured at ~21,504 input tokens for a trivial "hi"
+# prompt, *before* any real conversation. That alone is 65% of a 32K window,
+# leaving no realistic room for conversation + output. A 64K window leaves
+# ~44K after that static floor — comfortable for a coding/agentic session.
+#
+# Same output-truncation fix as qwen3.6__35b-a3b-32k-standalone/Modelfile:
+#   - num_predict capped at 16384 (not -1/unbounded) so generation always
+#     stops on its own terms with tokens returned, instead of riding
+#     "thinking" all the way to num_ctx with nothing visible.
+#   - SYSTEM prompt nudges concise thinking + guarantees a final answer.
+# See docs/tuning-results.md for the full reasoning and empirical tests
+# behind both choices.
+
+FROM qwen3.6:35b-a3b
+
+PARAMETER num_ctx 65536
+# num_gpu intentionally omitted — host-wide OLLAMA_NUM_GPU/OLLAMA_MAX_VRAM
+# env vars already handle GPU offload; a static value here conflicts with it.
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+
+PARAMETER num_predict 16384
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "qwen3.6:35b-a3b-64k-agentic": {
+          "name": "Qwen3.6-35B-A3B (64K, agentic default)",
+          // Recommended for opencode/agentic use. opencode's own system
+          // prompt + tool schemas (edit, bash, glob, grep, task, lsp, mcp)
+          // add static overhead on every request, same as Copilot CLI's
+          // measured ~21.5K tokens — a 32K window leaves too little room.
+          // Matches modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile
+          // exactly (num_ctx 65536, num_predict 16384).
+          //
+          // 32k-standalone is intentionally NOT listed here — its window
+          // can't fit opencode/Copilot's static tool overhead, so it's only
+          // meant for `ollama run qwen3.6:35b-a3b-32k-standalone` directly.
+          "limit": { "context": 65536, "output": 16384 }
+        }
+      }
+    }
+  },
+
+  "model": "ollama/qwen3.6:35b-a3b-64k-agentic",
+
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 4096
+  }
+}

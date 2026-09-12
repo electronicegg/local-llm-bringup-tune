@@ -8,6 +8,7 @@
 - **Context window / context length**: Max tokens (prompt + response) the model can consider at once. Bigger context = more RAM/VRAM for the KV cache.
 - **Token**: Chunk of text (~¾ word average). Models read/write in tokens, not characters.
 - **Tokens/sec (t/s)**: Generation speed. Main real-world performance metric.
+- **EOS (End-Of-Sequence) token**: A special token the model emits to signal "I'm finished, stop generating." A clean/natural stop (API `done_reason: stop`), distinct from being cut off by a length limit (`done_reason: length`, from `num_predict` or `num_ctx`).
 
 ## Quantization (shrinking models to fit memory)
 - **Quantization**: Reducing numeric precision of weights (e.g., 16-bit → 4-bit) to cut memory use, at some quality cost.

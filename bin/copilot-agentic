@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# bin/copilot-agentic — launches Copilot CLI wired to the local
+# qwen3.6:35b-a3b-64k-agentic model via BYOK, with token limits matched to
+# the Modelfile (see modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile and
+# configs/copilot/copilot-byok-64k-agentic.env for the reasoning).
+#
+# Usage: bin/copilot-agentic [copilot args...]
+
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "$REPO_ROOT/configs/copilot/copilot-byok-64k-agentic.env"
+
+exec copilot "$@"

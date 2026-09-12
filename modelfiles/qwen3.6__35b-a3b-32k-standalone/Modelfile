@@ -1,0 +1,59 @@
+# Modelfile: Qwen3.6-35B-A3B, 32K context — "32k-standalone" tuning for
+# graceful context-limit handling (Legion 5 Pro, 8GB VRAM/32GB RAM, no swap).
+#
+# Named "standalone" because Copilot CLI's static system+tool overhead alone
+# (~21.5K tokens, see the 64k-agentic Modelfile) doesn't fit this window —
+# use this variant with `ollama run qwen3.6:35b-a3b-32k-standalone` directly,
+# not through Copilot CLI / opencode.
+#
+# Goal: never silently stop mid-thinking with no visible reply. See
+# docs/tuning-results.md ("Output-side testing" + "no-swap host") for the
+# evidence behind these choices:
+#   - num_ctx 32768 chosen as the daily-driver default for plain chat: lowest/
+#     most predictable RAM pressure of all tested sizes, most headroom now
+#     that there's no swap cushion. Use 64k-agentic for CLI/tool-calling use,
+#     or any task needing more room (large doc/RAG input).
+#   - num_predict capped at 16384 (50% of num_ctx) — not -1/unbounded, and
+#     raised from an earlier 8192 after repeated real-world "terminated
+#     mid-think / truncated output" incidents. Guarantees generation always
+#     stops on its own terms with tokens already returned, instead of
+#     silently riding the model's "thinking" phase all the way to num_ctx,
+#     while giving thinking+response a much larger runway than before. The
+#     conversation-history side of the window is intentionally left smaller
+#     (only 16384 tokens of "room" before context-shift kicks in) because
+#     that side already degrades gracefully on its own (oldest-turn
+#     eviction, confirmed via context-probe tests) — it doesn't need a big
+#     reserved cushion the way single-turn output does.
+#   - SYSTEM prompt nudges concise thinking so the cap above is rarely hit
+#     in the first place, and pushes the model to commit to a final answer
+#     rather than keep deliberating.
+#   - Multi-turn conversations already degrade gracefully on their own:
+#     Ollama's context-shift silently evicts oldest turns as num_ctx fills
+#     (confirmed via context-probe tests) — no config needed for that case.
+#     This tuning targets the *other* failure mode: long single-shot
+#     generations/thinking that can hit num_ctx before finishing.
+
+FROM qwen3.6:35b-a3b
+
+PARAMETER num_ctx 32768
+# num_gpu intentionally omitted — host-wide OLLAMA_NUM_GPU/OLLAMA_MAX_VRAM
+# env vars already handle GPU offload; a static value here conflicts with it.
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+
+# 50/50 split of the 32K window: up to 16K for thinking+response in a single
+# turn, 16K left for accumulated conversation/tool-context (relies on
+# context-shift to evict oldest turns gracefully once that fills).
+PARAMETER num_predict 16384
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""
