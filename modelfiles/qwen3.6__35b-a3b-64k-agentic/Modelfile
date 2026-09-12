@@ -26,8 +26,19 @@ PARAMETER num_ctx 65536
 PARAMETER num_batch 256
 PARAMETER num_thread 16
 
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
+# Sampling aligned to Qwen3.6/Unsloth's published "thinking mode, precise
+# coding" recommendation (temp 0.6 / top_p 0.95 / presence_penalty 0.0).
+# top_k, min_p, repeat_penalty are left unset — the qwen3.6:35b-a3b base
+# model's own baked-in defaults (top_k=20, min_p=0, repeat_penalty=1)
+# already match Unsloth's table, so no override is needed. Notably we
+# override the base model's presence_penalty=1.5 down to 0.0: 1.5 is
+# Unsloth's *non-thinking/instruct* value, but our SYSTEM prompt runs in
+# thinking mode (visible "Thinking..." output) — thinking mode should not
+# penalize legitimate repeated tokens during reasoning/code. See
+# docs/tuning-results.md ("Unsloth alignment") for the full comparison.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
 
 PARAMETER num_predict 16384
 

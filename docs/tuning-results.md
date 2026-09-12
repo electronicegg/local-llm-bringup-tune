@@ -673,3 +673,85 @@ running server has it active.
   steamwebhelper zygote processes consuming a non-trivial combined RSS
   during this session — unrelated to the LLM stack, but worth closing
   during heavier dev-session multitasking if `available` ever gets tight.
+
+## Unsloth-alignment: sampling params + reasoning-effort skill tiers
+
+Following up on the [Unsloth Qwen3.6 docs](https://unsloth.ai/docs/models/qwen3.6),
+which publish per-mode recommended sampling tables, we cross-checked our
+Modelfiles against them.
+
+### Sampling parameters
+
+Checked our custom models' fully-merged effective parameters via
+`ollama show <model> --parameters` (this merges `FROM` base-model defaults
+with our Modelfile's `PARAMETER` overrides). Findings:
+
+- The official `qwen3.6:35b-a3b` Ollama-library base model already ships
+  with near-Unsloth-recommended defaults: `top_k=20`, `min_p=0`,
+  `repeat_penalty=1`, `top_p=0.95`, `temperature=1`. Our own Modelfiles were
+  only overriding `temperature`/`top_p`, silently inheriting the rest — so
+  most of the "tuning" here is about *not accidentally clobbering* good
+  defaults, not adding new ones.
+- One genuine mismatch found: the base model's `presence_penalty=1.5` is
+  Unsloth's **non-thinking/instruct** mode value. Our models run in
+  **thinking mode** by default (visible "Thinking... / ...done thinking."
+  wrapper in output) — Unsloth's thinking-mode tables all recommend
+  `presence_penalty=0.0`, since penalizing repeated tokens is counter-
+  productive during legitimate reasoning/code repetition.
+
+**Applied** to both `qwen3.6__35b-a3b-64k-agentic/Modelfile` and
+`.../32k-standalone/Modelfile` (Unsloth's "thinking mode, precise coding" row):
+
+| Param | Old | New |
+|---|---|---|
+| `temperature` | 0.7 | **0.6** |
+| `top_p` | 0.9 | **0.95** |
+| `presence_penalty` | (inherited 1.5) | **0.0** (explicit) |
+
+`top_k`, `min_p`, `repeat_penalty` left unset/inherited — already match
+Unsloth's table via the base model. Both models rebuilt (cheap — only the
+small params/manifest layer changed, all 22GB weight layers reused).
+Verified merged params post-rebuild match the table exactly, and spot-
+tested both for coherent, non-gibberish output (relevant since Unsloth's
+docs flag KV-cache quantization as a possible gibberish source, and we run
+`OLLAMA_KV_CACHE_TYPE=q8_0`) — no issues observed.
+
+### Reasoning-effort tiers via Copilot CLI skills
+
+No local equivalent exists for hosted models' `reasoning_effort` API
+parameter — Ollama/Qwen3.6 only exposes binary `enable_thinking`, soft
+SYSTEM-prompt nudging, and hard `num_predict` caps, none of which give
+real graduated control. As a practical substitute, built two Copilot CLI
+**custom skills** under `configs/copilot/skills/`:
+
+- **`quick`**: triggered by `/quick` or quick/fast/brief phrasing; instructs
+  the model to cap internal reasoning to 1-2 steps and skip alternative
+  exploration.
+- **`thorough`**: triggered by `/thorough` or deep/careful phrasing;
+  instructs extensive reasoning, edge-case/tradeoff consideration, and
+  self-checking before finalizing.
+
+Registered via `copilot skill add configs/copilot/skills/<name>`.
+**How it actually works** (confirmed via `--log-level debug` wire-request
+inspection): Copilot CLI embeds every registered skill's `name` +
+`description` directly into the system instructions as an
+`<available_skills>` list — the model reads this list itself and matches
+the literal token/phrasing against the current message; no separate
+"invoke skill" tool call happens for this kind of natural-language nudge.
+
+**Empirically verified both tiers**, end-to-end with `bin/copilot-agentic`:
+- `/quick` prompt ("just a /quick consideration: what's 17 * 23?") —
+  model's own reasoning trace explicitly said *"they've used the /quick
+  signal, so I should just give a direct answer"*, then answered in ~97
+  output tokens.
+- `/thorough` prompt (Go worker-pool mutex-vs-channel design question) —
+  model produced a much longer, more deliberate answer (~1,000+ output
+  tokens) covering tradeoffs and example code.
+
+Skill token cost confirmed cheap (see earlier "skill token cost" section):
+name+description only sit in context; full `SKILL.md` body never loads for
+this style of skill since there's no tool invocation to trigger it.
+
+**opencode compatibility**: not yet verified whether opencode has an
+equivalent skill-discovery mechanism. Until confirmed, treat `/quick` and
+`/thorough` as Copilot-CLI-only.

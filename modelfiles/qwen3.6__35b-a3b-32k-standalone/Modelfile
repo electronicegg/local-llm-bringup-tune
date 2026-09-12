@@ -41,8 +41,13 @@ PARAMETER num_ctx 32768
 PARAMETER num_batch 256
 PARAMETER num_thread 16
 
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
+# Sampling aligned to Qwen3.6/Unsloth's published "thinking mode, precise
+# coding" recommendation (temp 0.6 / top_p 0.95 / presence_penalty 0.0),
+# same rationale as qwen3.6__35b-a3b-64k-agentic/Modelfile — see there and
+# docs/tuning-results.md ("Unsloth alignment") for the full comparison.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
 
 # 50/50 split of the 32K window: up to 16K for thinking+response in a single
 # turn, 16K left for accumulated conversation/tool-context (relies on
