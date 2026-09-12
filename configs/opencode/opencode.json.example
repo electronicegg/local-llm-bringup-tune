@@ -27,6 +27,17 @@
 
   "model": "ollama/qwen3.6:35b-a3b-64k-agentic",
 
+  // Reuse the same quick/thorough SKILL.md files as Copilot CLI (see
+  // configs/copilot/skills/) instead of duplicating them — opencode scans
+  // any path here recursively for **/SKILL.md, same frontmatter format.
+  // NOTE: this path is resolved relative to opencode's cwd at launch time,
+  // not relative to this config file — bin/opencode-agentic sets it to an
+  // absolute path via OPENCODE_SKILLS_DIR before exec'ing opencode so this
+  // works regardless of which project directory you launch it from.
+  "skills": {
+    "paths": ["{env:OPENCODE_SKILLS_DIR}"]
+  },
+
   "compaction": {
     "auto": true,
     "prune": true,

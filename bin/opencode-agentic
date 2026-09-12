@@ -3,11 +3,18 @@
 # (configs/opencode/opencode.json.example) via OPENCODE_CONFIG, instead of
 # relying on a synced copy at ~/.config/opencode/opencode.json.
 #
+# Also points opencode's "skills.paths" (via {env:OPENCODE_SKILLS_DIR}
+# interpolation in the config) at configs/copilot/skills/ so the /quick and
+# /thorough reasoning-effort skills are shared with Copilot CLI instead of
+# duplicated. opencode surfaces these as real slash commands (/quick,
+# /thorough), unlike Copilot CLI's natural-language description matching.
+#
 # Usage: bin/opencode-agentic [opencode args...]
 
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export OPENCODE_CONFIG="$REPO_ROOT/configs/opencode/opencode.json.example"
+export OPENCODE_SKILLS_DIR="$REPO_ROOT/configs/copilot/skills"
 
 exec opencode "$@"

@@ -755,3 +755,40 @@ this style of skill since there's no tool invocation to trigger it.
 **opencode compatibility**: not yet verified whether opencode has an
 equivalent skill-discovery mechanism. Until confirmed, treat `/quick` and
 `/thorough` as Copilot-CLI-only.
+
+### opencode skill support — confirmed, different mechanism than Copilot CLI
+
+opencode has its own native skill system (`opencode debug skill` lists
+discovered skills; `.opencode/skill(s)/<name>/SKILL.md` project/global
+convention, same frontmatter shape as Copilot CLI's). Key difference from
+Copilot CLI: **opencode surfaces skills as literal slash commands**
+(`/quick`, `/thorough`) rather than relying purely on the model matching a
+natural-language description — the skill's `name` becomes an actual
+invocable command.
+
+**Setup**: rather than duplicating `SKILL.md` files, `configs/opencode/
+opencode.json.example` points opencode at the existing
+`configs/copilot/skills/` directory via:
+```json
+"skills": { "paths": ["{env:OPENCODE_SKILLS_DIR}"] }
+```
+`{env:VAR}` interpolation (documented for MCP headers, confirmed here to
+also work for `skills.paths`) resolves at launch time — `bin/opencode-
+agentic` now exports `OPENCODE_SKILLS_DIR=$REPO_ROOT/configs/copilot/
+skills` before exec'ing opencode, so this works regardless of which
+project directory opencode is launched from. Note this path resolves
+relative to opencode's **cwd at launch**, not relative to the config
+file's own directory — a plain relative path (`"../copilot/skills"`)
+silently resolved against the wrong base and found nothing.
+
+**Verified working** via `bin/opencode-agentic run "/quick ..."` and
+`"/thorough ..."`:
+- `/quick what's 17 * 23?` → terse `391`, no elaboration.
+- `/thorough should I use a mutex or channel for a go worker pool?` → long,
+  structured answer covering both options, code examples, and a rule of
+  thumb.
+
+Confirmed via `opencode debug skill` that both `quick` and `thorough` are
+discovered (alongside opencode's built-in `customize-opencode` skill) with
+`location` correctly pointing at the shared `configs/copilot/skills/`
+files — no duplication needed between the two CLI tools.
