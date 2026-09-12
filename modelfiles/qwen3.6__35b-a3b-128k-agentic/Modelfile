@@ -1,0 +1,55 @@
+# Modelfile: Qwen3.6-35B-A3B, 128K context — "128k-agentic" tuning, the
+# default tier for agentic CLI use (Copilot CLI, opencode) via BYOK/Ollama.
+# Supersedes 64k-agentic as the default; 64k-agentic is kept as a fallback
+# config for lower-RAM/other-workload situations, not because it's needed
+# for memory reasons on this hardware (see below).
+#
+# Why num_batch 128 (not 256, unlike 64k-agentic/32k-standalone): measured
+# that num_batch 256 breaks Ollama's CPU/GPU auto-balancer above ~64K
+# context — the larger prompt-processing buffer needed at num_batch=256
+# competes with KV-cache VRAM at load time, pushing more weight layers
+# CPU-ward (measured 96K context: VRAM dropped to 5.7GB, split degraded,
+# host RSS rose to ~22.8GB). Dropping to num_batch 128 fixes this
+# completely — 128K then measured at essentially the same footprint as
+# 64K (~22GB host RSS, ~7GB VRAM, 78-81/19-22 GPU split), even under an
+# ~18K-to-57K-token filled-context test (RSS grew by only ~150-200MB
+# across that range). See docs/tuning-results.md ("128K feasibility") for
+# the full measurements. Tradeoff: somewhat slower prompt-ingestion
+# throughput than num_batch=256, in exchange for headroom + working GPU
+# offload at this context size.
+#
+# num_predict raised to 32768 (vs 16384 in 64k-agentic/32k-standalone) —
+# matches Qwen3.6/Unsloth's general recommended output length, made
+# practical here by the much larger 128K window (98,304 tokens still left
+# for input/conversation even at the full 32,768 output cap).
+#
+# Same output-truncation-avoidance approach as the other tiers: num_predict
+# capped (not -1/unbounded) so generation always stops on its own terms
+# with tokens already returned, plus a SYSTEM prompt nudging concise
+# thinking and a guaranteed final answer.
+
+FROM qwen3.6:35b-a3b
+
+PARAMETER num_ctx 131072
+# num_gpu intentionally omitted — host-wide OLLAMA_NUM_GPU/OLLAMA_MAX_VRAM
+# env vars already handle GPU offload; a static value here conflicts with it.
+PARAMETER num_batch 128
+PARAMETER num_thread 16
+
+# Sampling aligned to Qwen3.6/Unsloth's published "thinking mode, precise
+# coding" recommendation, same rationale as the other tiers — see
+# docs/tuning-results.md ("Unsloth alignment").
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+PARAMETER num_predict 32768
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

@@ -9,17 +9,26 @@
       "models": {
         "qwen3.6:35b-a3b-64k-agentic": {
           "name": "Qwen3.6-35B-A3B (64K, agentic default)",
-          // Recommended for opencode/agentic use. opencode's own system
-          // prompt + tool schemas (edit, bash, glob, grep, task, lsp, mcp)
-          // add static overhead on every request, same as Copilot CLI's
-          // measured ~21.5K tokens — a 32K window leaves too little room.
-          // Matches modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile
-          // exactly (num_ctx 65536, num_predict 16384).
+          // Default — chosen for prompt-processing speed (~244 tok/s vs
+          // 128k-agentic's ~137 tok/s, measured — see docs/tuning-results.md,
+          // "128K feasibility"). Matches
+          // modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile exactly
+          // (num_ctx 65536, num_predict 16384).
+          "limit": { "context": 65536, "output": 16384 }
+        },
+        "qwen3.6:35b-a3b-128k-agentic": {
+          "name": "Qwen3.6-35B-A3B (128K, more context room)",
+          // Switch to this mid-session via /model for long agentic
+          // sessions or larger doc/code input — same RAM/VRAM footprint as
+          // 64K (see docs/tuning-results.md, "128K feasibility"), just
+          // slower prompt ingestion. Matches
+          // modelfiles/qwen3.6__35b-a3b-128k-agentic/Modelfile exactly
+          // (num_ctx 131072, num_predict 32768).
           //
           // 32k-standalone is intentionally NOT listed here — its window
           // can't fit opencode/Copilot's static tool overhead, so it's only
           // meant for `ollama run qwen3.6:35b-a3b-32k-standalone` directly.
-          "limit": { "context": 65536, "output": 16384 }
+          "limit": { "context": 131072, "output": 32768 }
         }
       }
     }

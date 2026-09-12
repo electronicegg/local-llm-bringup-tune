@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 # bin/copilot-agentic — launches Copilot CLI wired to the local
-# qwen3.6:35b-a3b-64k-agentic model via BYOK, with token limits matched to
-# the Modelfile (see modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile and
+# qwen3.6:35b-a3b-64k-agentic model via BYOK (the default agentic tier,
+# chosen for prompt-processing speed — see docs/tuning-results.md,
+# "128K feasibility" tok/s comparison), with token limits matched to the
+# Modelfile (see modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile and
 # configs/copilot/copilot-byok-64k-agentic.env for the reasoning).
+#
+# Use bin/copilot-agentic-128k instead when a task needs more context room
+# (long agentic sessions, larger doc/code input).
+#
+# NOTE: Copilot CLI's BYOK mode is locked to a single model per process —
+# there is no in-session /model switching between custom BYOK models (its
+# /model picker only lists GitHub's own hosted model catalog, confirmed by
+# testing with this BYOK env active). To switch tiers, exit and relaunch
+# with the other script (or use /resume to jump back to a session already
+# running under the other launcher).
 #
 # Usage: bin/copilot-agentic [copilot args...]
 

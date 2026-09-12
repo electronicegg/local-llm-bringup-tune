@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# bin/copilot-agentic-128k — launches Copilot CLI wired to the local
+# qwen3.6:35b-a3b-128k-agentic model via BYOK, for tasks that need more
+# context room than the 64K default (long agentic sessions, larger
+# doc/code input). Costs ~45% slower prompt-ingestion throughput than the
+# 64K default (~137 vs ~244 tok/s measured) in exchange for double the
+# context ceiling at essentially the same RAM/VRAM footprint — see
+# docs/tuning-results.md ("128K feasibility") for the measurements.
+#
+# NOTE: Copilot CLI's BYOK mode is locked to a single model per process —
+# see bin/copilot-agentic for why in-session switching isn't possible;
+# exit and relaunch with the other script to switch tiers.
+#
+# Usage: bin/copilot-agentic-128k [copilot args...]
+
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "$REPO_ROOT/configs/copilot/copilot-byok-128k-agentic.env"
+
+exec copilot "$@"

@@ -792,3 +792,123 @@ Confirmed via `opencode debug skill` that both `quick` and `thorough` are
 discovered (alongside opencode's built-in `customize-opencode` skill) with
 `location` correctly pointing at the shared `configs/copilot/skills/`
 files — no duplication needed between the two CLI tools.
+
+## 128K feasibility test — new default agentic tier
+
+Tested whether we could push past 64K (96K? straight to 128K?) while
+keeping headroom for other RAM use (browser + devtools) — with the goal
+of finding the memory-cost curve, not just "does it load".
+
+### Idle-load memory (fresh, ~0 tokens context)
+
+| Config | num_batch | VRAM | Host RSS | GPU split |
+|---|---|---|---|---|
+| 64K (baseline) | 256 | 7,056 MiB | ~21.7 GB | 78/22 |
+| 96K | 256 (default) | 5,722 MiB | ~22.8 GB | degraded (more CPU) |
+| 96K | **128** | 7,096 MiB | ~21.9 GB | 78/22 |
+| 128K | **128** | 7,050 MiB | ~22.0 GB | 81/19 |
+
+**Key finding**: `num_batch=256` (used by 32k-standalone/64k-agentic)
+breaks Ollama's CPU/GPU auto-balancer above ~64K context — the larger
+prompt-processing buffer needed at that batch size competes with KV-cache
+VRAM at load time, pushing weight layers CPU-ward and *increasing* host
+RSS despite lower VRAM use. Dropping to `num_batch=128` fixes this
+completely: 96K and 128K then both measure at essentially the **same**
+footprint as 64K.
+
+### Under filled context (warm model, same ~18K-token prompt)
+
+All three (with `num_batch=128` where relevant) land around 21.9–22.0 GB
+RSS — no meaningful difference by context size once batch is tuned.
+Pushed further: a ~57K-token fill on the 128K config only grew RSS to
+~22.1 GB (+~150MB over the 18K-token baseline) — confirms q8_0 KV-cache
+growth stays cheap even much deeper into a large window. `available` RAM
+(the real headroom metric) stayed ~21-22GB in every configuration tested.
+
+### Does num_batch=128 help at 64K too? No — tested, no benefit
+
+Asked whether 64k-agentic should also drop to `num_batch=128` for extra
+headroom. Measured on a warm model with the same ~18K-token filler prompt:
+
+| batch | prompt-eval speed | Host RSS | VRAM/split |
+|---|---|---|---|
+| 256 (current, kept) | ~244 tok/s (75.2s) | ~22.0 GB | 7,056 MiB, 78/22 |
+| 128 | ~146 tok/s (125.3s) | ~21.9 GB | 7,036 MiB, 78/22 |
+
+At 64K the auto-balancer already gets a good split at `num_batch=256` —
+the degradation only appears at ≥96K. So `num_batch=128` at 64K costs
+~40% slower prompt ingestion for no memory benefit. **Left 64k-agentic's
+Modelfile unchanged** (`num_batch=256`).
+
+### Decision: 128K is the new default agentic tier
+
+Since 96K (tuned) and 128K cost the same, went straight to 128K instead of
+adding 96K as an intermediate step — no reason to stop short of the
+larger ceiling. Built `qwen3.6__35b-a3b-128k-agentic` (replaces the old
+untested `qwen3.6__35b-a3b-ctx128k` template):
+- `num_ctx 131072`, `num_batch 128`, same Unsloth-aligned sampling as the
+  other tiers (`temperature 0.6`, `top_p 0.95`, `presence_penalty 0.0`).
+- `num_predict` raised to **32768** (vs 16384 in the other tiers) — matches
+  Qwen3.6/Unsloth's general recommended output length, practical here
+  since 128K leaves 98,304 tokens for input even at the full output cap.
+- Same graceful-output SYSTEM prompt as the other tiers.
+
+128k-agentic was built and initially made the default in both tools, then
+**reverted back to 64k-agentic as default** after the tok/s comparison and
+model-switching investigation below. See "64K vs 128K: final tok/s
+comparison and default decision" for the reasoning.
+
+### 64K vs 128K: final tok/s comparison and default decision
+
+Measured generation speed (not just prompt-eval) on both warm models,
+same ~18K-token filler prompt + short summary ask:
+
+| tier | prompt-eval | generation |
+|---|---|---|
+| 64k-agentic (batch=256) | 247.1 tok/s | 36.6 tok/s |
+| 128k-agentic (batch=128) | 137.4 tok/s | 34.6 tok/s |
+
+Generation speed is roughly comparable (~35-37 tok/s either way) — the
+real cost of 128K is prompt-*ingestion* throughput, ~44% slower. That
+matters more for long documents/large-context dumps than for typical
+conversational turns.
+
+**Model-switching investigation**: wanted 64K as the default for
+performance, with the ability to switch to 128K on the fly within the
+same session depending on the task. Investigated both tools:
+
+- **opencode**: real per-session `/model` switching — its
+  `provider.<name>.models` map is a genuine multi-model catalog, and
+  `/model` can switch between any configured models, including both of
+  our Ollama BYOK-style tiers. Already verified working with skills
+  testing in a prior session.
+- **Copilot CLI**: **BYOK is single-model-per-process — no in-session
+  switching is possible.** Confirmed via multiple angles:
+  1. `copilot help providers` only documents singular env vars
+     (`COPILOT_MODEL`, `COPILOT_PROVIDER_MODEL_ID`,
+     `COPILOT_PROVIDER_WIRE_MODEL`,
+     `COPILOT_PROVIDER_MAX_PROMPT_TOKENS`/`MAX_OUTPUT_TOKENS`) — no
+     array/multi-model config form exists.
+  2. `~/.copilot/settings.json` / `config.json` have no BYOK model-catalog
+     structure to populate.
+  3. Live interactive test via `pexpect` (spawning a real `copilot`
+     process with a pty and driving `/model`) showed the picker only
+     surfaces GitHub's own hosted cloud catalog (claude-\*, gpt-\*,
+     gemini-\*, etc.) — never the local BYOK model.
+  4. `copilot help config`'s enumerated `model` choices, run **with the
+     BYOK env sourced**, still listed only cloud model names — zero
+     local/Ollama entries. Confirms `/model` is designed for switching
+     within GitHub's hosted catalog only, not custom BYOK endpoints.
+  - Env vars are read once at process startup, so the only way to switch
+    tiers in Copilot CLI is to exit and relaunch with a different script.
+
+**Decision**: `bin/copilot-agentic` and opencode's default `model` were
+both reverted/set to **64k-agentic** (performance default). 128K stays
+available as:
+- Copilot CLI: a separate launcher, `bin/copilot-agentic-128k` (restart
+  required to switch — no live switching possible per above).
+- opencode: a second entry in the `models` map, real `/model` switching
+  mid-session (no restart needed).
+
+`32k-standalone` remains excluded from both CLI configs — its window
+can't fit either tool's static tool overhead, so it's `ollama run`-only.
