@@ -1143,3 +1143,56 @@ Wired into `configs/opencode/opencode.json.example` as an additional
 `qwen3.6:35b-a3b-64k-agentic` (still the default), since the two make
 opposite tradeoffs (speed vs. RAM headroom). No standalone tier built
 (agentic-only, per request).
+
+## Update: MTP (multi-token prediction / speculative decoding) — already in use, verified beneficial
+
+Prompted by Unsloth's docs (https://unsloth.ai/docs/models/gemma-4,
+https://unsloth.ai/docs/models/mtp): MTP lets a model draft several
+upcoming tokens at once, which the same model then verifies in parallel,
+cutting the number of full forward passes needed per generated token
+(quality-neutral — only verified tokens are kept). Unsloth claims ~1.4-2.2x
+speedup on GGUFs.
+
+**Finding: we're already running it, without having configured anything.**
+`ollama show <model> -v` reveals a `draft_num_predict` parameter baked into
+some (not all) of this host's model tags — this is Ollama's native
+speculative-decoding knob, set automatically whenever the pulled GGUF
+includes a compatible MTP draft head:
+
+| Model | `draft_num_predict` shipped? |
+|---|---|
+| `qwen3.6:35b-a3b` | **2** (MTP enabled by default) |
+| `gemma4:26b` | **3** (MTP enabled by default) |
+| `qwen3.5:9b` | not present — no MTP draft head in this Ollama library tag |
+| `qwen3.5:4b` | not present — same |
+| `gemma4:e4b` | not present — same |
+
+None of this repo's existing Modelfiles set `draft_num_predict` explicitly,
+so every `qwen3.6:35b-a3b-*` and `gemma4:26b-64k-agentic` tier has been
+using MTP **by default all along**, inherited silently from the base tag.
+
+**Caveat checked and ruled out**: Ollama 0.34.2 (this host's exact
+installed version, confirmed via `ollama --version`) has a known GitHub
+issue (ollama/ollama#18541) reporting MTP causing a **4x slowdown** (75.1
+-> 17.4 tok/s) on `qwen3.8:27b` (a Qwen3.5-architecture model) due to
+near-total draft-token rejection. Verified this does **not** affect either
+model in active use here — A/B tested MTP on vs. off at equal 65,536
+context, same prompt, this host:
+
+| Model | MTP off (`draft_num_predict 0`) | MTP on (shipped default) |
+|---|---|---|
+| `qwen3.6:35b-a3b` | 37.9 gen tok/s | 41.5-42.0 gen tok/s |
+| `gemma4:26b` | 27.5-27.9 gen tok/s | 33.6-36.8 gen tok/s |
+
+MTP gives a real, consistent ~10% (qwen3.6) to ~20-30% (gemma4) speedup on
+this host for both models — well short of Unsloth's claimed 2x (that's
+likely measured on beefier GPUs, e.g. their RTX 6000 Qwen3.6 benchmark of
+240 tok/s), but a genuine free win, not the regression seen on `qwen3.8:27b`.
+
+**Action taken: none needed** — leaving `draft_num_predict` unset (inherit
+base tag default) in all existing Modelfiles is already correct. Doesn't
+apply to the `qwen3.5:9b`/`qwen3.5:4b` tiers since Ollama's library tags
+for those sizes don't ship an MTP draft head (Unsloth's separate MTP GGUF
+uploads for the Qwen3.5 family aren't what `ollama pull` fetches). If a
+future MTP-enabled small Qwen3.5 tag appears in Ollama's library, worth
+re-checking.
