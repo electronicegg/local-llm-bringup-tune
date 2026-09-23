@@ -1,0 +1,46 @@
+# Modelfile: Qwen3.5-9B (dense), 48K context — "48k-agentic" tuning, the
+# larger-context opencode option (mid-session `/model` switch from
+# 32k-agentic, no restart needed — see docs/tuning-results.md for why
+# opencode supports this and Copilot CLI doesn't; this is also part of why
+# Copilot CLI support was dropped for this model).
+#
+# Use this over 32k-agentic when a task needs more room (longer tool-use
+# session, more files/context) and you're willing to trade some speed for
+# it: measured 26.0 gen tok/s / 78%/22% GPU split here vs. 32k-agentic's
+# 29.5 tok/s / 81%/19% — see that file's header comment for the full
+# 32K/48K/64K comparison table and the dense-vs-MoE reasoning behind why
+# this model (unlike qwen3.6:35b-a3b) degrades noticeably per context
+# tier. Don't jump straight to 64K here — the extra headroom isn't needed
+# given opencode's low ~7,322-token static overhead, and 64K costs
+# meaningfully more speed (22.3 gen tok/s, see docs/tuning-results.md).
+#
+# num_batch left at 256 — see qwen3.5__9b-32k-agentic/Modelfile; tested
+# num_batch=128 here too, no measurable benefit.
+#
+# num_gpu intentionally omitted — let Ollama's own auto-balancer pick
+# layer placement from live free VRAM.
+
+FROM qwen3.5:9b
+
+PARAMETER num_ctx 49152
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling aligned the same way as qwen3.5__9b-12k-standalone/Modelfile —
+# see that file and docs/tuning-results.md ("Unsloth alignment") for the
+# full reasoning.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+# 25% of num_ctx for output, same proportion as 32k-agentic.
+PARAMETER num_predict 12288
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

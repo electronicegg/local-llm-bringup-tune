@@ -1,0 +1,66 @@
+# Modelfile: Qwen3.5-9B (dense), 32K context — "32k-agentic" tuning, the
+# default opencode-only tier for this model.
+#
+# opencode-only (Copilot CLI support dropped for qwen3.5:9b): Copilot CLI's
+# static system+tool overhead measures ~21,504 input tokens (see
+# docs/tuning-results.md) — 65% of this 32K window alone, which is why the
+# qwen3.6:35b-a3b tiers needed to jump straight to 64K for Copilot CLI.
+# opencode's default toolset (no bundled MCP) measures only ~7,322 input
+# tokens — comfortably fits well inside 32K with plenty of headroom left
+# for conversation/tool-context growth, so there's no need to pay this
+# dense model's steep off-GPU speed penalty (see below) just to satisfy a
+# client we're no longer using it with.
+#
+# Why 32768 and not 48K/64K: measured on this host (8GB VRAM, `ollama ps`,
+# no num_gpu override) — qwen3.5:9b is DENSE (not MoE like
+# qwen3.6:35b-a3b), so unlike that model it degrades hard once CPU
+# offload starts (all 9.7B params run on whatever fraction lands on CPU,
+# vs. MoE's ~3B active-only cost):
+#
+#   num_ctx    GPU split      gen tok/s   prompt-eval tok/s   size
+#   32,768     81%/19% GPU    29.5        143.3               6.7 GB
+#   49,152     78%/22% GPU    26.0        188.4               7.1 GB
+#   65,536     74%/26% GPU    22.3         98.9               7.6 GB
+#
+# 32K keeps the best speed of the three "agentic" sizes while still
+# leaving ~4-5x opencode's static overhead in headroom. See
+# modelfiles/qwen3.5__9b-48k-agentic/Modelfile for the larger-context
+# option (real /model mid-session switching in opencode, no restart
+# needed) if a task needs more room. See docs/tuning-results.md
+# ("qwen3.5:9b tuning") for the full writeup and the dense-vs-MoE finding
+# behind this guidance.
+#
+# num_batch left at 256 — tested 128 (the fix that helps qwen3.6:35b-a3b
+# at ≥96K) at 48K/64K for this model too; no measurable difference either
+# time, so no reason to trade away prompt-eval throughput for it.
+#
+# num_gpu intentionally omitted — let Ollama's own auto-balancer pick
+# layer placement from live free VRAM.
+
+FROM qwen3.5:9b
+
+PARAMETER num_ctx 32768
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling aligned the same way as qwen3.5__9b-12k-standalone/Modelfile —
+# see that file and docs/tuning-results.md ("Unsloth alignment") for the
+# full reasoning.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+# 25% of num_ctx for output, matching the qwen3.6 agentic tiers'
+# proportion (16384/65536, 32768/131072) — generous single-turn budget
+# while leaving most of the window for accumulated conversation/tool
+# context.
+PARAMETER num_predict 8192
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

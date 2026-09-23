@@ -970,26 +970,47 @@ gen tok/s) — not as a large-context/agentic workhorse, where
 while partially CPU-offloaded.
 
 ### Tiers built
-Following the same two-tier pattern as the qwen3.6 lineup (plain-chat vs.
-Copilot/opencode-compatible), sized to this model's own measured cliff
-rather than copying the 35B's context values:
 - **`qwen3.5:9b-12k-standalone`** (`modelfiles/qwen3.5__9b-12k-standalone/`)
   — `num_ctx 12288` (last confirmed 100%-GPU point), `num_predict 6144`
   (50/50 split, same rationale as `32k-standalone`), same Unsloth-aligned
   sampling and graceful-output SYSTEM prompt as the qwen3.6 tiers. Daily
   driver for plain `ollama run`/quick chat/coding — the max-speed tier.
-- **`qwen3.5:9b-64k-agentic`** (`modelfiles/qwen3.5__9b-64k-agentic/`) —
-  `num_ctx 65536`, `num_predict 16384`, same 65,536/16,384 split as
-  `qwen3.6:35b-a3b-64k-agentic` so the Copilot CLI static-overhead math
-  (~21.5K tokens, see above) carries over directly. Matching
-  `configs/copilot/copilot-byok-9b-64k-agentic.env`,
-  `bin/copilot-agentic-9b`, and an `opencode.json.example` entry were
-  added, mirroring the existing qwen3.6 wiring. Per the finding above, this
-  tier trades away most of the model's speed advantage — use it for a
-  smaller-footprint or independently-loadable second model (e.g. opencode
-  `/model` switching), not as a replacement for
-  `qwen3.6:35b-a3b-128k-agentic` on heavy/long agentic sessions.
-- **`qwen3.5:9b-32k-standalone` intentionally not built**: at 81% GPU with
-  meaningfully lower tok/s than the 12K tier, and still too small to fit
-  Copilot CLI's static overhead comfortably anyway — no clear use case
-  between the two tiers above.
+
+### Update: Copilot CLI support dropped for this model, opencode-only agentic tiers
+Initially built a `64k-agentic` tier mirroring `qwen3.6:35b-a3b-64k-agentic`
+(sized for Copilot CLI's ~21.5K static-overhead floor). Decision reversed:
+dropped Copilot CLI support for `qwen3.5:9b` entirely and focused only on
+opencode, whose default toolset (no bundled MCP) measures only **~7,322**
+static input tokens (vs. Copilot CLI's ~21,505) — see the "opencode
+baseline" section above. Since this dense model degrades hard per context
+tier (unlike the MoE `qwen3.6:35b-a3b`), there's no reason to pay for a 64K
+floor just to satisfy a client this model no longer targets.
+
+Removed: `modelfiles/qwen3.5__9b-64k-agentic/`,
+`configs/copilot/copilot-byok-9b-64k-agentic.env`, `bin/copilot-agentic-9b`.
+
+Measured 32K/48K/64K to pick the new opencode-only default:
+| num_ctx | GPU split | gen tok/s | prompt-eval tok/s | size |
+|---|---|---|---|---|
+| 32,768 | 81%/19% | 29.5 | 143.3 | 6.7 GB |
+| 49,152 | 78%/22% | 26.0 | 188.4 | 7.1 GB |
+| 65,536 | 74%/26% | 22.3 | 98.9 | 7.6 GB |
+
+Both 32K and 48K leave 4-5x opencode's ~7,322-token static overhead in
+headroom, so the choice comes down to speed vs. context ceiling, not
+fitting a hard floor (unlike the Copilot CLI case). Built both as
+opencode-switchable tiers rather than picking one:
+- **`qwen3.5:9b-32k-agentic`** (`modelfiles/qwen3.5__9b-32k-agentic/`) —
+  `num_ctx 32768`, `num_predict 8192` (25% split, matching the qwen3.6
+  agentic tiers' proportion). Default — best speed of the three.
+- **`qwen3.5:9b-48k-agentic`** (`modelfiles/qwen3.5__9b-48k-agentic/`) —
+  `num_ctx 49152`, `num_predict 12288`. opencode `/model`-switchable
+  option for longer tool-use sessions/more file context, trading ~12%
+  gen speed for 50% more context room.
+- **64K rejected** as the new default: costs the most speed (22.3 tok/s,
+  ~24% slower than 32K) for context headroom that opencode's low static
+  overhead doesn't actually require.
+
+Both new tiers wired into `configs/opencode/opencode.json.example` only
+(no Copilot equivalents) — `qwen3.5:9b-12k-standalone` remains
+`ollama run`-only, same reasoning as `32k-standalone` for the 35B model.

@@ -30,23 +30,38 @@
           // meant for `ollama run qwen3.6:35b-a3b-32k-standalone` directly.
           "limit": { "context": 131072, "output": 32768 }
         },
-        "qwen3.5:9b-64k-agentic": {
-          "name": "Qwen3.5-9B (dense, 64K, small/fast alternative)",
-          // Switch to this via /model when you want the much smaller
-          // footprint (7.6GB vs 22GB) for a quick tool-calling question,
-          // not for heavy/long agentic sessions — qwen3.5:9b is DENSE
-          // (not MoE), so it degrades harder than the 35B-A3B tiers once
-          // it spills off GPU at this context size (measured: 22.3 vs
-          // 36.6 gen tok/s at the same 64K context — see
-          // docs/tuning-results.md, "qwen3.5:9b tuning"). Matches
-          // modelfiles/qwen3.5__9b-64k-agentic/Modelfile exactly
-          // (num_ctx 65536, num_predict 16384).
+        "qwen3.5:9b-32k-agentic": {
+          "name": "Qwen3.5-9B (dense, 32K, small/fast alternative)",
+          // opencode-only for this model (Copilot CLI support dropped —
+          // its ~21.5K static overhead needs 64K+, which costs this dense
+          // model too much speed to be worth it just for Copilot
+          // compatibility). opencode's own static overhead is only
+          // ~7,322 tokens, so 32K leaves plenty of headroom. Switch to
+          // this via /model when you want the much smaller footprint
+          // (6.7GB vs 22GB) or fastest speed for a quick tool-calling
+          // question — not for heavy/long agentic sessions, where
+          // qwen3.6:35b-a3b-*-agentic stays faster even while partially
+          // CPU-offloaded (qwen3.5:9b is DENSE, not MoE, so it degrades
+          // harder per context tier — see docs/tuning-results.md,
+          // "qwen3.5:9b tuning"). Matches
+          // modelfiles/qwen3.5__9b-32k-agentic/Modelfile exactly
+          // (num_ctx 32768, num_predict 8192).
           //
           // 9b-12k-standalone is intentionally NOT listed here — same
           // reason as 32k-standalone above: its window can't fit
-          // opencode/Copilot's static tool overhead, so it's only meant
-          // for `ollama run qwen3.5:9b-12k-standalone` directly.
-          "limit": { "context": 65536, "output": 16384 }
+          // opencode's static tool overhead, so it's only meant for
+          // `ollama run qwen3.5:9b-12k-standalone` directly.
+          "limit": { "context": 32768, "output": 8192 }
+        },
+        "qwen3.5:9b-48k-agentic": {
+          "name": "Qwen3.5-9B (dense, 48K, more context room)",
+          // Switch to this mid-session via /model for a longer tool-use
+          // session or more file context than 32k-agentic comfortably
+          // holds — costs some speed (26.0 vs 29.5 gen tok/s measured,
+          // see docs/tuning-results.md). Matches
+          // modelfiles/qwen3.5__9b-48k-agentic/Modelfile exactly
+          // (num_ctx 49152, num_predict 12288).
+          "limit": { "context": 49152, "output": 12288 }
         }
       }
     }
