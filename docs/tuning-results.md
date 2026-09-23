@@ -1196,3 +1196,85 @@ for those sizes don't ship an MTP draft head (Unsloth's separate MTP GGUF
 uploads for the Qwen3.5 family aren't what `ollama pull` fetches). If a
 future MTP-enabled small Qwen3.5 tag appears in Ollama's library, worth
 re-checking.
+
+## Update: gemma4:26b agentic-coding viability + system prompt / thinking-control review
+
+Investigated three things: whether our Modelfile's `SYSTEM` prompt actually
+restricts opencode usage, whether gemma4:26b's native function-calling
+works end-to-end through opencode, and how to best control
+general-purpose vs. coding/thinking behavior.
+
+### Finding: client-supplied system messages fully replace the Modelfile `SYSTEM` default — for every model, not just gemma4
+Tested via `/v1/chat/completions` directly: a request with no `system`
+message uses the Modelfile's baked-in `SYSTEM` text (confirmed via its
+content shaping the response), but a request that **includes** a `system`
+message replaces it entirely — verified with an adversarial test (client
+system message "You are a pirate, respond only in pirate speak" fully took
+over; the model's own reasoning trace explicitly cited that instruction
+with zero trace of our "keep reasoning efficient" text). This is Ollama's
+general OpenAI-compat behavior, not gemma4-specific — it equally applies to
+every `qwen3.6:35b-a3b-*`/`qwen3.5:*` tier in this repo.
+
+**Practical implication**: since opencode always sends its own system
+prompt (with tool definitions/agent instructions), **our Modelfiles'
+`SYSTEM` graceful-stop text has zero effect during opencode sessions** —
+it only matters for bare `ollama run`/raw-API use without a client system
+message. Nothing is "restricting" agentic use here; the instruction is
+simply inert in that context, superseded by opencode's own (evidently
+adequate — see below) system prompt. No fix needed/attempted — opencode's
+default instructions already produce correct tool-calling behavior.
+
+### Finding: `think:false` doesn't fully suppress thinking via the OpenAI-compat endpoint — `reasoning_effort:"none"` does
+- Native `/api/chat` + `"think": false` → `thinking` field empty, no
+  deliberation overhead. Works as expected.
+- `/v1/chat/completions` (what opencode's `@ai-sdk/openai-compatible`
+  provider uses) + top-level `"think": false` → **thinking still happens**
+  (589-char reasoning trace observed on a trivial question) — this field
+  isn't honored on this path.
+- `/v1/chat/completions` + `"chat_template_kwargs": {"enable_thinking":
+  false}` (the llama-server-native flag per Unsloth's docs) → partially
+  reduces it (105 chars) but doesn't fully suppress.
+- `/v1/chat/completions` + **`"reasoning_effort": "none"`** → **fully
+  suppresses reasoning** (0-length trace), confirmed for both
+  `gemma4:26b-64k-agentic` and `qwen3.6:35b-a3b-64k-agentic`.
+
+This **corrects** the earlier "Unsloth-alignment" section's claim that "no
+local equivalent exists for hosted models' `reasoning_effort` API
+parameter" — this Ollama version (0.34.2) does support it via the
+OpenAI-compat endpoint. Not yet confirmed whether opencode's own config/UI
+exposes a way to set `reasoning_effort` per-request or per-model (its
+schema has a generic untyped `options` object at the agent-config level
+that may be the mechanism — unconfirmed). Worth revisiting if default
+thinking verbosity becomes a practical latency/token problem in real usage
+— for now, `num_predict`'s generous 25%-of-context budget on the agentic
+tiers absorbs it without truncation.
+
+### Confirmed: gemma4:26b's native function-calling works correctly end-to-end via opencode
+Ran two real agentic tasks against `gemma4:26b-64k-agentic` through
+`bin/opencode-agentic run -m ollama/gemma4:26b-64k-agentic "..."`:
+- **Glob + Read**: asked to list files and read README.md — correctly
+  called `Glob`, then `Read`, then correctly reported the file didn't
+  exist (verified true — no false positive/hallucination).
+- **Write + Read (real coding task)**: asked to create a Python file with
+  a `reverse_string` function + docstring, then read it back — correctly
+  called `Write`, produced clean idiomatic code, then `Read` to verify.
+
+Both completed without tool-schema errors, malformed calls, or retries —
+**gemma4:26b is viable for real agentic coding work through opencode**, not
+just benchmarks-on-paper.
+
+### Recommendation: general-purpose + coding on gemma4:26b
+No Modelfile changes needed. In practice:
+- Leave thinking **on** (opencode's default) for actual coding/agentic
+  work — Unsloth/Google's own benchmarks (LiveCodeBench 77.1%, Codeforces
+  ELO 1718) and our own successful tool-calling tests were both with
+  thinking enabled; the reasoning budget is what drives code-quality gains.
+- The `SYSTEM` prompt tuning that matters for Qwen3.x agentic use doesn't
+  transfer here — don't bother customizing it further for opencode use,
+  since opencode's own system prompt fully overrides it regardless of what
+  it says.
+- If a future session shows gemma4 spending too much time/tokens
+  "overthinking" simple requests during agentic loops, `reasoning_effort`
+  is the confirmed working lever (not `think`/`chat_template_kwargs`) —
+  worth testing whether opencode's per-agent `options` field can set it,
+  or whether a lower-effort variant tier is worth building.
