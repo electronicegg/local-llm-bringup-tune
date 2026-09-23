@@ -1,0 +1,77 @@
+# Modelfile: Gemma4-26B-A4B (MoE, ~3.8B active), 64K context —
+# "64k-agentic" tuning, opencode tier. Built as a lower-RAM alternative to
+# qwen3.6:35b-a3b-64k-agentic on this 8GB-VRAM/32GB-RAM host — see
+# docs/tuning-results.md ("gemma4:26b tuning") for the full measurement
+# writeup that motivated this.
+#
+# Why this model at all: qwen3.6:35b-a3b-64k-agentic's CPU-offloaded 80% of
+# a 22GB model leaves Windows with only ~1.3GB free system RAM at steady
+# state (measured, `llama-server` working set ~17.9GB) — too tight
+# alongside normal desktop use (Chrome, etc). gemma4:26b is real MoE
+# (25.2B total / 3.8B active + 1 shared expert, per Ollama's official
+# gemma4 page) with Gemma's sliding-window attention (1024-token window,
+# keeps KV cache small), so far more of it fits on this host's 8GB GPU.
+#
+# Empirically measured (no num_gpu override, `ollama ps` + Windows-side
+# memory inspection):
+#
+#   num_ctx     CPU/GPU split   GPU VRAM used   free system RAM   gen tok/s   prompt-eval tok/s
+#   65,536      24%/76%         7.3/8.2 GB      ~6.7 GB           33-36       72.1 (7.2 cold-start)
+#   131,072     22%/78%         7.7/8.2 GB      ~6.0 GB           33.1        40.3
+#
+# Compare qwen3.6:35b-a3b-64k-agentic at the same 65,536 context: 80%/20%
+# CPU/GPU, only ~1.3GB free system RAM, but faster (46.6 gen tok/s, 92.9
+# prompt-eval). The tradeoff is real: gemma4:26b trades some raw speed for
+# ~5GB more RAM headroom on this host.
+#
+# Picked 65,536 over 131,072 for this tier: GPU VRAM is already 94% full at
+# 131,072 (7.7/8.2 GB, very little margin), and prompt-eval tok/s roughly
+# halves (72.1 -> 40.3) — a real cost for agentic tool-calling where each
+# turn re-ingests file/diff context. 65,536 leaves more GPU headroom and
+# much faster prompt ingestion, at only slightly less free RAM (6.7 vs
+# 6.0 GB). opencode's own static overhead is only ~7,322 tokens, so 65,536
+# leaves ample room either way.
+#
+# Cold-start caveat: first prompt-eval after model load is much slower
+# (~7.2 tok/s measured) than subsequent calls (~72.1 tok/s) — sparse MoE
+# experts lazy-load via mmap from disk as they're first touched. Expect a
+# slow first turn per session; steady afterward.
+#
+# num_gpu intentionally omitted — let Ollama's own auto-balancer pick layer
+# placement from live free VRAM, same reasoning as all other tiers in this
+# repo.
+
+FROM gemma4:26b
+
+PARAMETER num_ctx 65536
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling: NOT overridden from Qwen3.x's Unsloth-alignment logic — Gemma4's
+# own shipped defaults (`ollama show gemma4:26b -v`) already match Google's
+# documented best practices for this model (temperature=1.0, top_p=0.95,
+# top_k=64), per https://ollama.com/library/gemma4 ("Best Practices" ->
+# "Sampling Parameters"). Pinned explicitly here anyway for clarity/
+# stability, in case the base tag's defaults ever change upstream.
+PARAMETER temperature 1.0
+PARAMETER top_p 0.95
+PARAMETER top_k 64
+
+# 25% of num_ctx for output, same proportion as the other *-agentic tiers
+# in this repo — leaves the other 75% for tool-call/file-context
+# accumulation.
+PARAMETER num_predict 16384
+
+# Thinking mode: controlled by Ollama's chat template from the API's
+# `think` field (inserts/omits the `<|think|>` control token automatically)
+# — no manual token handling needed here, same as qwen3.x. See
+# https://ollama.com/library/gemma4 ("Best Practices" -> "Thinking Mode
+# Configuration").
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

@@ -1081,3 +1081,65 @@ default `model` left unchanged at `qwen3.6:35b-a3b-64k-agentic`) as
 additional `/model`-switchable options alongside the existing qwen3.5:9b
 and qwen3.6:35b-a3b tiers — not a replacement for either, since 4B trades
 capability for its speed/context advantage.
+
+## Update: gemma4:26b tuning (real MoE, RAM-headroom alternative)
+
+Motivated by a concrete host problem, not a speed goal: running
+`qwen3.6:35b-a3b-64k-agentic` (the existing default) leaves Windows with
+only ~1.3GB free system RAM at steady state — measured via
+`Get-CimInstance Win32_OperatingSystem` and `Get-Process` on the native
+Windows Ollama host, with `llama-server`'s working set at ~17.9GB for an
+80%/20% CPU/GPU split at 65,536 context. Too tight alongside normal desktop
+use (Chrome, etc). `gemma4:26b` was checked as a lower-footprint MoE
+alternative.
+
+**Model**: `gemma4:26b` — officially "Gemma 4 26B A4B", real MoE: 25.2B
+total params, **3.8B active** + 1 shared expert (128 total experts, 8
+active per token), 30 layers, Gemma-family sliding-window attention
+(1024-token window — keeps KV cache small regardless of context), 256K
+context ceiling, vision-capable. See
+[ollama.com/library/gemma4](https://ollama.com/library/gemma4) ("Best
+Practices"): sampling defaults (`temperature=1.0, top_p=0.95, top_k=64`)
+already match the base tag's shipped params — no Unsloth-style override
+needed here, unlike the Qwen3.x models. Thinking mode is controlled by
+Ollama's chat template from the API's `think` field (inserts/omits a
+`<|think|>` control token), not manual prompt engineering.
+
+### Measured GPU/CPU split, VRAM, and Windows-side system RAM (no `num_gpu` override)
+| num_ctx | CPU/GPU split | GPU VRAM used | free system RAM | gen tok/s | prompt-eval tok/s |
+|---|---|---|---|---|---|
+| 65,536 | 24%/76% | 7.3/8.2 GB | ~6.7 GB | 33–36 | 72.1 (7.2 cold-start) |
+| 131,072 | 22%/78% | 7.7/8.2 GB | ~6.0 GB | 33.1 | 40.3 |
+
+Compare directly to `qwen3.6:35b-a3b-64k-agentic` at the same 65,536
+context: 80%/20% CPU/GPU, only ~1.3GB free system RAM, `llama-server`
+working set ~17.9GB, but faster (46.6 gen tok/s, 92.9 prompt-eval).
+
+### Key finding: real MoE + sliding-window attention fits far more on this 8GB GPU
+Despite being a smaller model overall (25.2B vs 35B total params), the
+deciding factor is architecture, not size: `gemma4:26b`'s smaller total
+footprint plus its 1024-token sliding-window attention (vs. qwen3.6's
+larger full-attention KV cache) lets Ollama's auto-balancer place ~76-78%
+of it on GPU instead of qwen3.6's ~20%. That difference alone frees up
+~5GB of Windows system RAM. Tradeoff: gen speed is ~25-30% lower, and
+there's a real cold-start prompt-eval penalty (~7.2 tok/s on the very
+first call after load, jumping to ~72.1 tok/s afterward) caused by sparse
+experts lazy-loading via mmap from disk as they're first touched —
+subsequent calls stay fast since pages are already resident.
+
+### Tier built (agentic only, per request)
+- **`gemma4:26b-64k-agentic`** (`modelfiles/gemma4__26b-64k-agentic/`) —
+  `num_ctx 65536`, `num_predict 16384` (25% split, matching the other
+  agentic tiers' proportion), sampling pinned to the base's own shipped
+  defaults for clarity (not an override). Picked 65,536 over 131,072:
+  GPU VRAM is already 94% full at 131,072 (little margin left), and
+  prompt-eval tok/s roughly halves (72.1 -> 40.3) — a real cost for
+  agentic tool-calling where each turn re-ingests file/diff context.
+  65,536 leaves more GPU headroom and much faster prompt ingestion for
+  only slightly less free RAM (6.7 vs 6.0 GB).
+
+Wired into `configs/opencode/opencode.json.example` as an additional
+`/model`-switchable option — not a replacement for
+`qwen3.6:35b-a3b-64k-agentic` (still the default), since the two make
+opposite tradeoffs (speed vs. RAM headroom). No standalone tier built
+(agentic-only, per request).

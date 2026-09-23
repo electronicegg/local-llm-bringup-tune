@@ -96,6 +96,23 @@
           // modelfiles/qwen3.5__4b-120k-agentic/Modelfile exactly
           // (num_ctx 122880, num_predict 30720).
           "limit": { "context": 122880, "output": 30720 }
+        },
+        "gemma4:26b-64k-agentic": {
+          "name": "Gemma4-26B-A4B (MoE, 64K, low-RAM alternative)",
+          // Real MoE (25.2B total / 3.8B active + 1 shared expert) with
+          // sliding-window attention, unlike qwen3.6:35b-a3b-64k-agentic's
+          // 80%/20% CPU/GPU split which leaves only ~1.3GB free Windows
+          // RAM at steady state. This model gets a 24%/76% CPU/GPU split
+          // instead (~6.7GB free RAM), at the cost of some raw speed
+          // (33-36 vs 46.6 gen tok/s) and a cold-start prompt-eval penalty
+          // on the first call per session (~7.2 tok/s, then ~72.1 once
+          // warmed — sparse experts lazy-load via mmap). Switch to this
+          // via /model when RAM headroom matters more than peak speed
+          // (e.g. Chrome/other apps open) — see docs/tuning-results.md,
+          // "gemma4:26b tuning". Matches
+          // modelfiles/gemma4__26b-64k-agentic/Modelfile exactly
+          // (num_ctx 65536, num_predict 16384).
+          "limit": { "context": 65536, "output": 16384 }
         }
       }
     }
