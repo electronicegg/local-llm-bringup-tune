@@ -1014,3 +1014,70 @@ opencode-switchable tiers rather than picking one:
 Both new tiers wired into `configs/opencode/opencode.json.example` only
 (no Copilot equivalents) — `qwen3.5:9b-12k-standalone` remains
 `ollama run`-only, same reasoning as `32k-standalone` for the 35B model.
+
+## Update: qwen3.5:4b tuning (closest smaller alternative to 9B)
+
+Follow-up to the above: `qwen3.5:9b`'s dense-model cliff (100% GPU only up
+to 13,312 context, confirmed by further binary search — 13,824 already
+88%/12%) leaves too little headroom once opencode's ~7,322-token static
+overhead is subtracted (~6,000 tokens left at a hypothetical tight 13K
+tier — rejected as too tight for real multi-step tool-calling, e.g. a
+single file read/diff could exceed it). Checked whether Qwen3.5 ships a
+7B/8B size to split the difference: it doesn't — the official lineup is
+**0.8B / 2B / 4B / 9B / 27B / 35B / 122B / 397B-A17B**, confirmed via
+`ollama.com/library/qwen3.5/tags`. 4B is the closest smaller option.
+
+**Model**: `qwen3.5:4b` — 4.7B params, dense, Q4_K_M, 3.4GB on disk. Same
+hybrid attention/SSM "qwen35" architecture as 9B (32 layers,
+`full_attention_interval 4`), just narrower (`embedding_length` 2560 vs
+9B's 4096). Pulled and confirmed via `ollama show -v` to match the
+official tag exactly (hash `2a654d98e6fb`).
+
+### Measured GPU/CPU split vs. context size (no `num_gpu` override)
+| num_ctx | GPU split | total size | gen tok/s | prompt-eval tok/s |
+|---|---|---|---|---|
+| 32,768 | **100% GPU** | 3.7 GB | 70.9 | 238.5 |
+| 65,536 | **100% GPU** | 4.4 GB | 70.7 | 237.0 |
+| 98,304 | **100% GPU** | 5.1 GB | (not separately timed) | — |
+| 114,688 | **100% GPU** | 5.5 GB | (not separately timed) | — |
+| 122,880 | **100% GPU** | 5.7 GB | (not separately timed) | — |
+| 126,976 | **100% GPU** | 5.7 GB | 70.8 | 224.2 |
+| 131,072 | 89%/11% CPU/GPU | 6.5 GB | (not measured) | — |
+
+### Key finding: 4B stays 100%-GPU-resident ~10x further out than 9B, at flat speed
+9B's 100%-GPU cliff falls at 13,312 context. 4B's cliff falls between
+126,976 and 131,072 — nearly **10x further out**. And unlike 9B (which
+loses gen speed sharply once split — 41.6 tok/s at 8K down to 22.3 tok/s
+at 65K), 4B's gen tok/s is essentially **flat across its entire
+100%-GPU-resident range** (70.7–70.9 tok/s from 32K through 127K) —
+because it never has to CPU-offload in the first place at any context
+size that matters for agentic use on this host. This makes 4B, not 9B,
+the model that actually satisfies "small + fast + fits opencode's agentic
+context comfortably" on this 8GB-VRAM host. It's also faster in absolute
+terms than either larger model at real agentic context: ~70.8 gen tok/s
+at 122,880 vs. `qwen3.6:35b-a3b`'s 36.6 tok/s at 65,536 or `qwen3.5:9b`'s
+22.3 tok/s at 65,536. The tradeoff is capability, not speed — 4B is a
+materially smaller/less capable model per-token than either 9B or 35b-a3b,
+appropriate for quick/light tasks rather than deep reasoning.
+
+### Tiers built
+- **`qwen3.5:4b-32k-standalone`** (`modelfiles/qwen3.5__4b-32k-standalone/`)
+  — `num_ctx 32768`, `num_predict 16384` (50/50 split). Plain `ollama
+  run`/chat use, matching the `*-standalone` naming convention; picked to
+  match `qwen3.6:35b-a3b-32k-standalone`'s size even though 4B could go
+  much larger here too.
+- **`qwen3.5:4b-120k-agentic`** (`modelfiles/qwen3.5__4b-120k-agentic/`) —
+  `num_ctx 122880`, `num_predict 30720` (25% split). Picked with an
+  ~8,192-token safety margin below the measured 126,976→131,072 cliff
+  (same margin-below-cliff practice as `qwen3.5:9b-12k-standalone`'s
+  12,288 vs. its 13,312 cliff) since these cliffs are sharp/binary, not
+  gradual — leaves room for GPU memory variance from other apps. At
+  122,880 total context minus opencode's ~7,322-token overhead, that's
+  >115K tokens of real tool-calling headroom, at full 100%-GPU speed.
+  No Copilot CLI variant, same reasoning as the 9B tiers.
+
+Both wired into `configs/opencode/opencode.json.example` (opencode-only,
+default `model` left unchanged at `qwen3.6:35b-a3b-64k-agentic`) as
+additional `/model`-switchable options alongside the existing qwen3.5:9b
+and qwen3.6:35b-a3b tiers — not a replacement for either, since 4B trades
+capability for its speed/context advantage.

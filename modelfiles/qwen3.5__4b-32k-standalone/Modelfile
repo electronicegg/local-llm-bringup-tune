@@ -1,0 +1,65 @@
+# Modelfile: Qwen3.5-4B (dense), 32K context — "32k-standalone" tuning, the
+# max-speed daily-driver tier for plain `ollama run`/chat use (not agentic
+# CLI use — see qwen3.5__4b-120k-agentic for that).
+#
+# Why 4B at all: qwen3.5:9b (dense, 9.7B params) hits its 100%-GPU cliff at
+# only 13,312 context on this host (8GB VRAM) — too tight for real opencode
+# tool-calling once its ~7,322-token static overhead is subtracted (see
+# docs/tuning-results.md, "qwen3.5:9b tuning" + "Copilot CLI support
+# dropped" sections). Qwen3.5 has no official 7B/8B size — the lineup is
+# 0.8B/2B/4B/9B/27B/35B/122B/397B-A17B — so 4B (4.7B params, same hybrid
+# attention/SSM "qwen35" architecture, embedding_length 2560 vs 9B's 4096)
+# is the closest smaller option. Empirically measured GPU/CPU split via
+# `ollama ps` on this host, no num_gpu override:
+#
+#   num_ctx     GPU split      total size    gen tok/s   prompt-eval tok/s
+#   32,768      100% GPU       3.7 GB        70.9        238.5
+#   65,536      100% GPU       4.4 GB        70.7        237.0
+#   98,304      100% GPU       5.1 GB        (not separately timed)
+#   114,688     100% GPU       5.5 GB        (not separately timed)
+#   122,880     100% GPU       5.7 GB        (not separately timed)
+#   126,976     100% GPU       5.7 GB        70.8        224.2
+#   131,072     89%/11% GPU    6.5 GB        (not separately timed)
+#
+# Remarkable finding vs 9B: 4B stays 100%-GPU-resident all the way out to
+# ~127K context (cliff is between 126,976 and 131,072 — nearly 10x further
+# out than 9B's 13,312 cliff), with gen tok/s essentially FLAT across the
+# entire range (~70.7-70.9 tok/s) — no dense-model CPU-offload penalty
+# because it never needs to offload in the first place at any context size
+# that matters here. This makes 4B, not 9B, the model that actually
+# satisfies "small + fast + fits opencode's agentic context comfortably"
+# on this host. See qwen3.5__4b-120k-agentic/Modelfile for the large-context
+# tier that exploits this. This tier (32K) is for plain chat/no-tool-use —
+# picked to match the qwen3.6 32k-standalone convention, well within the
+# 100%-GPU-resident zone with large margin to spare.
+#
+# num_gpu intentionally omitted — let Ollama's own auto-balancer pick layer
+# placement from live free VRAM.
+
+FROM qwen3.5:4b
+
+PARAMETER num_ctx 32768
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling aligned to the same Qwen3.x "thinking mode" rationale applied to
+# the qwen3.5:9b and qwen3.6:35b-a3b tiers (temp 0.6 / top_p 0.95 /
+# presence_penalty 0.0) — see docs/tuning-results.md ("Unsloth alignment").
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+# 50/50 split of the 32K window, same rationale as the other *-standalone
+# tiers: half for thinking+response in a single turn, half left for
+# accumulated conversation (relies on Ollama's context-shift to evict
+# oldest turns gracefully once that fills).
+PARAMETER num_predict 16384
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

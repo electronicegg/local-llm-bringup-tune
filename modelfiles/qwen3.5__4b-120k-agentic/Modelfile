@@ -1,0 +1,61 @@
+# Modelfile: Qwen3.5-4B (dense), 120K context — "120k-agentic" tuning, the
+# opencode tier that actually delivers what qwen3.5:9b couldn't on this
+# host: large agentic context AND 100%-GPU-resident full speed at the
+# same time. No Copilot CLI variant — same reasoning as the 9B tiers
+# (Copilot's ~21,504-token static overhead is too costly relative to
+# opencode's ~7,322; see docs/tuning-results.md, "Copilot CLI support
+# dropped for this model").
+#
+# Why 122,880 and not the true cliff (126,976 -> 131,072): picked with an
+# ~8,192-token safety margin below the measured 100%-GPU boundary, same
+# margin-below-cliff practice as qwen3.5__9b-12k-standalone (12,288 vs its
+# 13,312 cliff) — leaves headroom for GPU memory variance from other apps/
+# the desktop compositor, since these cliffs are sharp/binary, not gradual.
+#
+#   num_ctx     GPU split      total size    gen tok/s   prompt-eval tok/s
+#   32,768      100% GPU       3.7 GB        70.9        238.5
+#   65,536      100% GPU       4.4 GB        70.7        237.0
+#   122,880     100% GPU       5.7 GB        (untested, same tier as 126,976)
+#   126,976     100% GPU       5.7 GB        70.8        224.2
+#   131,072     89%/11% GPU    6.5 GB        (not separately timed)
+#
+# At 122,880 total context minus opencode's ~7,322-token static overhead,
+# that's still >115K tokens of real headroom for tool-calling/file-reading
+# — vastly more comfortable than qwen3.5:9b's tightest viable tier ever
+# offered (~6,000 tokens headroom at a hypothetical 13K tier that was
+# ultimately rejected as too tight). gen tok/s here (~70.8) is also
+# essentially double qwen3.5:9b's best-case 41.6 tok/s and beats even
+# qwen3.6:35b-a3b's 65536-context 36.6 tok/s — because 4B never has to
+# CPU-offload at any of these sizes, unlike both of those. Tradeoff: 4B is
+# a materially less capable model per-token than 9B or 35b-a3b (see
+# docs/tuning-results.md for the full family comparison) — pick this tier
+# when task complexity is light/quick and speed + large context matter
+# more than peak reasoning quality.
+#
+# num_gpu intentionally omitted — let Ollama's own auto-balancer pick layer
+# placement from live free VRAM.
+
+FROM qwen3.5:4b
+
+PARAMETER num_ctx 122880
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling aligned the same way as qwen3.5__4b-32k-standalone/Modelfile —
+# see that file and docs/tuning-results.md ("Unsloth alignment").
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+# 25% of num_ctx for output, same proportion as the qwen3.5:9b agentic
+# tiers — leaves the other 75% for tool-call/file-context accumulation.
+PARAMETER num_predict 30720
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""
