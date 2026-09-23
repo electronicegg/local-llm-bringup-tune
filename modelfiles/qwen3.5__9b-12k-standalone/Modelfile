@@ -1,0 +1,66 @@
+# Modelfile: Qwen3.5-9B (dense), 12K context — "12k-standalone" tuning, the
+# max-speed daily-driver tier for plain `ollama run`/chat use (not agentic
+# CLI use — see qwen3.5__9b-64k-agentic for that).
+#
+# Why 12288 and not more: qwen3.5:9b is DENSE (not MoE like qwen3.6:35b-a3b)
+# — every one of its 9.7B params runs on every token, on whatever
+# device(s) hold its layers. Empirically measured GPU/CPU split via
+# `ollama ps` on this host (8GB VRAM, auto-balanced, no num_gpu override):
+#
+#   num_ctx    GPU split      total size    gen tok/s   prompt-eval tok/s
+#   8,192      100% GPU       5.5 GB        41.6        194.2
+#   12,288     100% GPU       5.6 GB        (untested, same tier as 8K)
+#   16,384     88%/12% GPU    6.3 GB        (not measured)
+#   32,768     81%/19% GPU    6.7 GB        29.5         143.3
+#   65,536     74%/26% GPU    7.6 GB        22.3          98.9
+#   131,072    57%/43% GPU    9.2 GB        (not measured)
+#
+# 12,288 is the last point confirmed 100% GPU-resident before the split
+# starts degrading (cliff falls between 12K and 16K on this host/quant).
+# Picked over 8,192 to give a bit more conversation/thinking headroom at
+# zero measured cost. See docs/tuning-results.md ("qwen3.5:9b tuning") for
+# the full comparison against qwen3.6:35b-a3b, including a notable finding:
+# once a DENSE model spills off-GPU, it degrades much harder than the MoE
+# model does at equivalent contexts, because 100% of its weights (not just
+# ~3B active) must run on whatever fraction lands on CPU. Practical
+# implication: keep this tier's context small and 100%-GPU-resident on
+# purpose — that's this model's actual value proposition on this host
+# (speed + tiny footprint), not a large context window.
+#
+# num_gpu intentionally omitted — same reasoning as the qwen3.6 tiers: let
+# Ollama's own auto-balancer pick layer placement from live free VRAM,
+# rather than hardcoding a layer count that could break across hosts/
+# quant updates.
+
+FROM qwen3.5:9b
+
+PARAMETER num_ctx 12288
+PARAMETER num_batch 256
+PARAMETER num_thread 16
+
+# Sampling aligned to the same Qwen3.x "thinking mode" rationale applied to
+# the qwen3.6:35b-a3b tiers (temp 0.6 / top_p 0.95 / presence_penalty 0.0) —
+# see docs/tuning-results.md ("Unsloth alignment") for that reasoning. The
+# base qwen3.5:9b model ships presence_penalty=1.5 (its non-thinking/
+# instruct-mode default) plus temperature=1 — both overridden here since
+# this Modelfile runs in thinking mode by default, same override logic as
+# qwen3.6:35b-a3b-64k-agentic/Modelfile. top_k/min_p/repeat_penalty left
+# unset — base model already ships Unsloth-aligned defaults (top_k=20).
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 0.0
+
+# 50/50 split of the 12K window, same rationale as qwen3.6's 32k-standalone:
+# up to 6144 for thinking+response in a single turn, ~6144 left for
+# accumulated conversation (relies on Ollama's context-shift to evict
+# oldest turns gracefully once that fills).
+PARAMETER num_predict 6144
+
+SYSTEM """You are a helpful assistant. Keep your internal reasoning
+efficient and proportional to the difficulty of the question — do not
+over-deliberate on simple requests. Regardless of how much you have
+reasoned, always make sure to produce a clear, complete final answer
+before you finish; if you notice you are running low on room to respond,
+wrap up your reasoning early and give your best answer rather than leaving
+it incomplete.
+"""

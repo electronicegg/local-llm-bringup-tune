@@ -912,3 +912,84 @@ available as:
 
 `32k-standalone` remains excluded from both CLI configs — its window
 can't fit either tool's static tool overhead, so it's `ollama run`-only.
+
+## Update: qwen3.5:9b tuning (dense model, host now Windows+WSL2 again)
+
+**Host note**: the host has moved off the native-Ubuntu dual-boot setup
+described above and is back on Windows 11 + WSL2 (this repo's shell now
+runs *in* WSL2, confirmed via `uname -a` showing `microsoft-standard-WSL2`
+and `ollama serve` **not** appearing in WSL2's own `ps aux` — the server is
+the native Windows Ollama app, reached over the shared `localhost:11434`).
+This means the Ubuntu-specific env vars documented above
+(`OLLAMA_NUM_GPU`/`OLLAMA_MAX_VRAM`/`OLLAMA_KV_CACHE_TYPE=q8_0`, the no-swap
+`systemd-oomd` tuning) are **not currently active** — GPU offload below is
+Ollama's own Windows-side auto-balancer, unmodified. Worth re-running
+`monitor.sh`-style host RAM checks if real instability shows up again; not
+done here since qwen3.5:9b's footprint is small enough that it wasn't
+necessary to reach a working tuning.
+
+**Model**: `qwen3.5:9b` — 9.7B params, **dense** (unlike `qwen3.6:35b-a3b`'s
+MoE), Q4_K_M, ~6.6GB on disk. `ollama show -v` reveals a hybrid
+attention/SSM architecture (`qwen35.block_count 32`,
+`full_attention_interval 4` — only 8 of 32 layers use full quadratic
+attention, the rest are SSM/linear-attention layers), plus a vision tower
+(`qwen35.vision.*`) — same `completion`/`vision`/`tools`/`thinking`
+capability set as `qwen3.6:35b-a3b`.
+
+### Measured GPU/CPU split vs. context size (no `num_gpu` override)
+| num_ctx | GPU split | total size | gen tok/s | prompt-eval tok/s |
+|---|---|---|---|---|
+| 8,192 | **100% GPU** | 5.5 GB | 41.6 | 194.2 |
+| 12,288 | **100% GPU** | 5.6 GB | (untested, same tier) | — |
+| 16,384 | 88%/12% CPU/GPU | 6.3 GB | (not measured) | — |
+| 32,768 | 81%/19% CPU/GPU | 6.7 GB | 29.5 | 143.3 |
+| 65,536 | 74%/26% CPU/GPU | 7.6 GB | 22.3 | 98.9 |
+| 131,072 | 57%/43% CPU/GPU | 9.2 GB | (not measured) | — |
+
+Tested `num_batch=128` (the fix that helped `qwen3.6:35b-a3b` at ≥96K) at
+65,536 and 131,072 for this model too — **no measurable difference either
+time** (splits identical to `num_batch=256`). Left at 256 (better
+prompt-eval throughput) in both new tiers.
+
+### Key finding: dense models degrade far harder than MoE once they spill off-GPU
+Comparing at the *same* 65,536 context, same host, same quant tier:
+
+| Model | GPU split | gen tok/s | prompt-eval tok/s |
+|---|---|---|---|
+| `qwen3.5:9b` (dense, 9.7B) | 74%/26% | **22.3** | 98.9 |
+| `qwen3.6:35b-a3b` (MoE, ~3B active) | 78%/22% | **36.6** | 247.1 |
+
+Despite being ~4x the total size, the MoE model is *faster* at equal
+context/split — because only its ~3B active experts run on the
+CPU-offloaded fraction, while the dense model must run **all** 9.7B params
+on whatever fraction lands on CPU. Practical implication: `qwen3.5:9b`'s
+real advantage on this host is staying **100% GPU-resident** at small
+context (where it's genuinely faster than the MoE model — 41.6 vs 36.6
+gen tok/s) — not as a large-context/agentic workhorse, where
+`qwen3.6:35b-a3b-*-agentic` remains the better throughput choice even
+while partially CPU-offloaded.
+
+### Tiers built
+Following the same two-tier pattern as the qwen3.6 lineup (plain-chat vs.
+Copilot/opencode-compatible), sized to this model's own measured cliff
+rather than copying the 35B's context values:
+- **`qwen3.5:9b-12k-standalone`** (`modelfiles/qwen3.5__9b-12k-standalone/`)
+  — `num_ctx 12288` (last confirmed 100%-GPU point), `num_predict 6144`
+  (50/50 split, same rationale as `32k-standalone`), same Unsloth-aligned
+  sampling and graceful-output SYSTEM prompt as the qwen3.6 tiers. Daily
+  driver for plain `ollama run`/quick chat/coding — the max-speed tier.
+- **`qwen3.5:9b-64k-agentic`** (`modelfiles/qwen3.5__9b-64k-agentic/`) —
+  `num_ctx 65536`, `num_predict 16384`, same 65,536/16,384 split as
+  `qwen3.6:35b-a3b-64k-agentic` so the Copilot CLI static-overhead math
+  (~21.5K tokens, see above) carries over directly. Matching
+  `configs/copilot/copilot-byok-9b-64k-agentic.env`,
+  `bin/copilot-agentic-9b`, and an `opencode.json.example` entry were
+  added, mirroring the existing qwen3.6 wiring. Per the finding above, this
+  tier trades away most of the model's speed advantage — use it for a
+  smaller-footprint or independently-loadable second model (e.g. opencode
+  `/model` switching), not as a replacement for
+  `qwen3.6:35b-a3b-128k-agentic` on heavy/long agentic sessions.
+- **`qwen3.5:9b-32k-standalone` intentionally not built**: at 81% GPU with
+  meaningfully lower tok/s than the 12K tier, and still too small to fit
+  Copilot CLI's static overhead comfortably anyway — no clear use case
+  between the two tiers above.
