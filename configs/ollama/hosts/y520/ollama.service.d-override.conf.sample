@@ -1,0 +1,6 @@
+# Legion Y520 systemd drop-in.
+# Install common.env and ollama.env under /etc/ollama first; see README.md.
+
+[Service]
+EnvironmentFile=/etc/ollama/common.env
+EnvironmentFile=/etc/ollama/hosts/y520/ollama.env

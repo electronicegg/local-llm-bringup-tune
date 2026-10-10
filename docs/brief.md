@@ -45,9 +45,9 @@ LLM internals — without freezing the host or leaving tasks incomplete.
 ## Deliverables
 - `glossary.md` — done.
 - `brief.md` — this file.
-- `research-notes.md` (proposed next) — tool comparison + model shortlist with
+- `research-notes__legion5.md` (proposed next) — tool comparison + model shortlist with
   org/country, sized for your hardware.
-- `tuning-guide.md` (proposed next) — practical config recipes per tool.
+- `tuning-guide__legion5.md` (proposed next) — practical config recipes per tool.
 
 ## Open items — answered
 1. **WSL2 GPU passthrough**: Works. Tried both WSL2 and Windows-side Ollama;
@@ -68,11 +68,11 @@ Qwen3.6/3.5-class models ship with very large default context windows
 alone can silently consume the remaining free RAM/VRAM after model weights
 are loaded — even though the weights themselves technically fit — causing
 the process to stall/hang rather than throw a clear OOM error. This is the
-first thing `tuning-guide.md` addresses.
+first thing `tuning-guide__legion5.md` addresses.
 
 ## Next deliverables (in progress)
-- `research-notes.md` — tool comparison + OS recommendation + model shortlist
+- `research-notes__legion5.md` — tool comparison + OS recommendation + model shortlist
   (org/country included) sized for 8GB VRAM / 32GB RAM.
-- `tuning-guide.md` — concrete Ollama (and llama.cpp) settings: quant level,
+- `tuning-guide__legion5.md` — concrete Ollama (and llama.cpp) settings: quant level,
   `num_ctx`, `num_gpu`/GPU layers, batch size, plus a step-by-step tuning loop
   for the Qwen3.6-35B-A3B case.

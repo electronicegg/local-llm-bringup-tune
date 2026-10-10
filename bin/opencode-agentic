@@ -16,5 +16,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export OPENCODE_CONFIG="$REPO_ROOT/configs/opencode/opencode.json.example"
 export OPENCODE_SKILLS_DIR="$REPO_ROOT/configs/copilot/skills"
+export OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://127.0.0.1:11434/v1}"
 
 exec opencode "$@"

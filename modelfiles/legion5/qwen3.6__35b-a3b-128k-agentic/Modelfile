@@ -2,7 +2,7 @@
 # default tier for agentic CLI use (Copilot CLI, opencode) via BYOK/Ollama.
 # Supersedes 64k-agentic as the default; 64k-agentic is kept as a fallback
 # config for lower-RAM/other-workload situations, not because it's needed
-# for memory reasons on this hardware (see below).
+# for memory reasons on the Legion 5 Pro (see below).
 #
 # Why num_batch 128 (not 256, unlike 64k-agentic/32k-standalone): measured
 # that num_batch 256 breaks Ollama's CPU/GPU auto-balancer above ~64K
@@ -13,7 +13,7 @@
 # completely — 128K then measured at essentially the same footprint as
 # 64K (~22GB host RSS, ~7GB VRAM, 78-81/19-22 GPU split), even under an
 # ~18K-to-57K-token filled-context test (RSS grew by only ~150-200MB
-# across that range). See docs/tuning-results.md ("128K feasibility") for
+# across that range). See docs/tuning-results__legion5.md ("128K feasibility") for
 # the full measurements. Tradeoff: somewhat slower prompt-ingestion
 # throughput than num_batch=256, in exchange for headroom + working GPU
 # offload at this context size.
@@ -38,7 +38,7 @@ PARAMETER num_thread 16
 
 # Sampling aligned to Qwen3.6/Unsloth's published "thinking mode, precise
 # coding" recommendation, same rationale as the other tiers — see
-# docs/tuning-results.md ("Unsloth alignment").
+# docs/tuning-results__legion5.md ("Unsloth alignment").
 PARAMETER temperature 0.6
 PARAMETER top_p 0.95
 PARAMETER presence_penalty 0.0

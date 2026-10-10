@@ -1,32 +1,62 @@
-# configs/ollama/dev-server.env.sh — env vars for manually running
-# `ollama serve` during testing/rebuilding on this host.
-#
-# DEV/TEST USE ONLY. Not a production/deployment config — for that, see
-# configs/ollama/ollama.service.d-override.conf.sample + README.md in this
-# directory, which apply the same values via systemd.
-#
-# Why manual instead of systemd here: the systemd ollama.service unit was
-# disabled on this host due to a permission error touching mtimes
-# (chtimes) on the NTFS-mounted model store — `ollama serve` run directly
-# in a user shell doesn't hit that restriction. This file is what's
-# `source`d before `nohup ollama serve &` each time the server needs a
-# restart during tuning work.
+#!/usr/bin/env bash
+# Load common Ollama settings and an optional host profile into the current
+# shell before starting `ollama serve`.
 #
 # Usage:
+#   OLLAMA_HOST_PROFILE=y520
 #   source configs/ollama/dev-server.env.sh
-#   nohup ollama serve > /tmp/ollama-serve.log 2>&1 &
+#   ollama serve
+#
+# With no profile, only common settings are loaded.
 
-export OLLAMA_MODELS=/mnt/windows11/Users/nikko/.ollama/models
-export OLLAMA_KEEP_ALIVE=30m
-export OLLAMA_NUM_GPU=99
-export OLLAMA_MAX_VRAM=7500
-export OLLAMA_FLASH_ATTENTION=1
-export OLLAMA_NUM_PAR=1
+_ollama_config_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+_ollama_common_config="$_ollama_config_dir/common.env"
+_ollama_had_allexport=0
+case $- in
+  *a*) _ollama_had_allexport=1 ;;
+esac
 
-# Quantize the K/V attention cache instead of full f16 precision. Verified
-# on this host (see docs/tuning-results.md "memory footprint tuning"):
-# frees VRAM headroom that Ollama's auto-balancer spends on offloading a
-# couple more weight layers to GPU instead of CPU RAM, netting ~750MB less
-# host RSS at idle with no observed VRAM increase or quality regression in
-# testing so far.
-export OLLAMA_KV_CACHE_TYPE=q8_0
+case "${_OLLAMA_LOADED_PROFILE:-}" in
+  legion5)
+    unset OLLAMA_HOST OLLAMA_MODELS OLLAMA_NUM_GPU OLLAMA_MAX_VRAM
+    unset OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE
+    ;;
+  y520) unset OLLAMA_HOST ;;
+esac
+unset _OLLAMA_LOADED_PROFILE
+
+if [[ ! -f "$_ollama_common_config" ]]; then
+  echo "Common Ollama config not found: $_ollama_common_config" >&2
+  unset _ollama_config_dir _ollama_common_config _ollama_had_allexport
+  return 1
+fi
+
+set -a
+# shellcheck source=/dev/null
+source "$_ollama_common_config"
+[[ "$_ollama_had_allexport" -eq 1 ]] || set +a
+
+if [[ -n "${OLLAMA_HOST_PROFILE:-}" ]]; then
+  case "$OLLAMA_HOST_PROFILE" in
+    legion5|y520) _ollama_host_config="$_ollama_config_dir/hosts/$OLLAMA_HOST_PROFILE/ollama.env" ;;
+    *)
+      echo "Unknown Ollama host profile '$OLLAMA_HOST_PROFILE' (expected legion5 or y520)" >&2
+      unset _ollama_config_dir _ollama_common_config _ollama_had_allexport
+      return 2
+      ;;
+  esac
+
+  if [[ ! -f "$_ollama_host_config" ]]; then
+    echo "Ollama host profile not found: $_ollama_host_config" >&2
+    unset _ollama_config_dir _ollama_common_config _ollama_host_config _ollama_had_allexport
+    return 1
+  fi
+
+  set -a
+  # shellcheck source=/dev/null
+  source "$_ollama_host_config"
+  [[ "$_ollama_had_allexport" -eq 1 ]] || set +a
+  _OLLAMA_LOADED_PROFILE="$OLLAMA_HOST_PROFILE"
+fi
+
+unset _ollama_config_dir _ollama_common_config _ollama_host_config _ollama_had_allexport

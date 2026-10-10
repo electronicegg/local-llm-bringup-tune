@@ -1,4 +1,4 @@
-# Tuning Results: Qwen3.6-35B-A3B Context Length Experiments
+# Tuning Results: Qwen3.6-35B-A3B Context Length Experiments (Legion 5 Pro)
 
 Host: Legion 5 Pro — RTX 4070 Laptop (8GB VRAM), AMD Ryzen 9 7945HX, 32GB DDR5.
 Ollama running on Windows 11, tested from WSL2 Ubuntu 22.04 via
@@ -169,7 +169,8 @@ permission bits.
 run `ollama serve` manually as the interactive user, carrying over the same
 env vars previously set in the systemd drop-in
 (`OLLAMA_MODELS`, `OLLAMA_KEEP_ALIVE=-1`, `OLLAMA_NUM_GPU=99`,
-`OLLAMA_MAX_VRAM=7500`, `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_PAR=1`).
+`OLLAMA_MAX_VRAM=7500`, `OLLAMA_FLASH_ATTENTION=1`,
+`OLLAMA_NUM_PARALLEL=1`).
 Confirmed `ollama create` succeeds under this setup.
 
 ### Model lineup change
@@ -519,11 +520,11 @@ param/manifest layers (no re-download or re-quantization).
 Added `bin/copilot-agentic` and `bin/opencode-agentic` launcher scripts that
 source/point at the repo-tracked configs directly (`OPENCODE_CONFIG` env var
 for opencode, replacing a previously synced copy at
-`~/.config/opencode/opencode.json`). Added `configs/ollama/dev-server.env.sh`
-(current manual `ollama serve` env, dev/test use only — systemd is disabled
-on this host due to an NTFS `chtimes` permission issue) plus a matching
-`ollama.service.d-override.conf.sample` + README for a future real
-deployment once that's resolved.
+`~/.config/opencode/opencode.json`). Added a shared
+`configs/ollama/dev-server.env.sh` loader plus per-host profiles. The Legion
+uses manual `ollama serve` for now because its NTFS model store causes a
+`chtimes` permission issue under systemd; the Y520 uses a native ext4 store
+and can run under systemd. See `configs/ollama/README.md`.
 
 **Data loss note:** a chained shell command misfired mid-restructure and
 deleted the untracked `tests/token-tests/` artifacts from tests 01–07

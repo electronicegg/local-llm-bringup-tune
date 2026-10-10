@@ -7,7 +7,7 @@
 # not through Copilot CLI / opencode.
 #
 # Goal: never silently stop mid-thinking with no visible reply. See
-# docs/tuning-results.md ("Output-side testing" + "no-swap host") for the
+# docs/tuning-results__legion5.md ("Output-side testing" + "no-swap host") for the
 # evidence behind these choices:
 #   - num_ctx 32768 chosen as the daily-driver default for plain chat: lowest/
 #     most predictable RAM pressure of all tested sizes, most headroom now
@@ -44,7 +44,7 @@ PARAMETER num_thread 16
 # Sampling aligned to Qwen3.6/Unsloth's published "thinking mode, precise
 # coding" recommendation (temp 0.6 / top_p 0.95 / presence_penalty 0.0),
 # same rationale as qwen3.6__35b-a3b-64k-agentic/Modelfile — see there and
-# docs/tuning-results.md ("Unsloth alignment") for the full comparison.
+# docs/tuning-results__legion5.md ("Unsloth alignment") for the full comparison.
 PARAMETER temperature 0.6
 PARAMETER top_p 0.95
 PARAMETER presence_penalty 0.0

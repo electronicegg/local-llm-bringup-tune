@@ -1,4 +1,4 @@
-# Tuning Guide: Fitting Models into 8GB VRAM / 32GB RAM
+# Tuning Guide: Legion 5 Pro (8GB VRAM / 32GB RAM)
 
 ## Note: on native Ubuntu, run Ollama as your user, not the systemd service
 The packaged `ollama.service` runs as a dedicated `ollama` system user. If
@@ -12,14 +12,14 @@ write) to update file timestamps.
 Fix: stop/disable the systemd service and run `ollama serve` manually as
 your own user, carrying over the same env vars the systemd drop-in used
 (`OLLAMA_MODELS`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_NUM_GPU`, `OLLAMA_MAX_VRAM`,
-`OLLAMA_FLASH_ATTENTION`, `OLLAMA_NUM_PAR`, etc.):
+`OLLAMA_FLASH_ATTENTION`, `OLLAMA_NUM_PARALLEL`, etc.):
 ```bash
 sudo systemctl stop ollama && sudo systemctl disable ollama
 source ~/.ollama-logs/env.sh   # your saved copy of the same env vars
 nohup ollama serve > ~/.ollama-logs/serve.log 2>&1 &
 disown
 ```
-See tuning-results.md ("Update: migration to native Ubuntu") for the full
+See tuning-results__legion5.md ("Update: migration to native Ubuntu") for the full
 diagnosis. This also means `num_gpu` should **not** be set per-Modelfile on
 this host — it's controlled globally via `OLLAMA_NUM_GPU`/`OLLAMA_MAX_VRAM`
 env vars instead; a static Modelfile value conflicts with that and can
@@ -147,7 +147,7 @@ commented `/etc/fstab` entry; the 8GB `/swap.img` file is kept on disk but
 inactive). No swap means the safety net for over-committing memory is gone —
 Linux's OOM-killer will hard-kill a process instead of degrading gracefully
 into swap. Recommendations, given the empirical test results in
-`tuning-results.md`:
+`tuning-results__legion5.md`:
 
 1. **`OLLAMA_KEEP_ALIVE` lowered from `-1` (forever) to `30m`.** Done — see
    note above. This is the single biggest lever: it guarantees memory is

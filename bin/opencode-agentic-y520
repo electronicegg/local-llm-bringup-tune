@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Launch OpenCode against the Gemma 4 profiles tuned for the Legion Y520.
+#
+# Usage: bin/opencode-agentic-y520 [opencode args...]
+
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+export OPENCODE_CONFIG="$REPO_ROOT/configs/opencode/opencode-y520.json"
+export OPENCODE_SKILLS_DIR="$REPO_ROOT/configs/copilot/skills"
+export OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://127.0.0.1:11434/v1}"
+export PATH="$HOME/.opencode/bin:$PATH"
+
+exec opencode "$@"

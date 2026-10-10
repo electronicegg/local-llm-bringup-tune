@@ -3,13 +3,11 @@
 # convention: the containing directory name maps to the Ollama model name,
 # with "__" translating to ":" (Ollama only allows one colon: name:tag).
 #
-#   qwen3.6__35b-a3b-8gb-vram-tuned/  ->  ollama model name: qwen3.6:35b-a3b-8gb-vram-tuned
+#   qwen3.6__35b-a3b-64k-agentic/  ->  ollama model name: qwen3.6:35b-a3b-64k-agentic
 #
 # Usage:
-#   ./build-model.sh <dir>        # build one model dir
-#   ./build-model.sh              # if cwd itself has a Modelfile, build using
-#                                  # cwd's dirname; otherwise build every
-#                                  # subdirectory of cwd that has a Modelfile
+#   ./build-model.sh <dir>        # build one model dir or every model below it
+#   ./build-model.sh              # build every model below cwd
 
 set -euo pipefail
 
@@ -24,33 +22,43 @@ build_one() {
   base="$(basename "$dir")"
   modelfile="$dir/Modelfile"
 
-  if [[ ! -f "$modelfile" ]]; then
-    echo "skip: no Modelfile in $dir" >&2
-    return 0
-  fi
-
   name="${base/__/:}"   # first "__" becomes ":"
 
   echo "==> Building '$name' from $modelfile"
   ollama create "$name" -f "$modelfile"
 }
 
-if [[ $# -ge 1 ]]; then
-  for d in "$@"; do
-    build_one "${d%/}"
+build_tree() {
+  local root="$1"
+  local -a modelfiles=()
+  local modelfile
+
+  mapfile -d '' modelfiles < <(find "$root" -type f -name Modelfile -print0 | sort -z)
+  if [[ "${#modelfiles[@]}" -eq 0 ]]; then
+    echo "No Modelfile found in $root or any subdirectory" >&2
+    return 1
+  fi
+
+  for modelfile in "${modelfiles[@]}"; do
+    build_one "$(dirname "$modelfile")"
+  done
+}
+
+if [[ $# -gt 0 ]]; then
+  for path in "$@"; do
+    if [[ -f "$path/Modelfile" ]]; then
+      build_one "$path"
+    elif [[ -f "$path" && "$(basename "$path")" == "Modelfile" ]]; then
+      build_one "$(dirname "$path")"
+    elif [[ -d "$path" ]]; then
+      build_tree "$path"
+    else
+      echo "Model directory or Modelfile not found: $path" >&2
+      exit 1
+    fi
   done
 elif [[ -f "./Modelfile" ]]; then
-  # Called from inside a model directory itself — use the current dirname.
   build_one "."
 else
-  found=0
-  for d in */; do
-    [[ -f "${d}Modelfile" ]] || continue
-    found=1
-    build_one "${d%/}"
-  done
-  if [[ "$found" -eq 0 ]]; then
-    echo "No Modelfile found in cwd or any subdirectory of $(pwd)" >&2
-    exit 1
-  fi
+  build_tree "."
 fi

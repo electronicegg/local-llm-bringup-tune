@@ -15,7 +15,7 @@
 #     stops on its own terms with tokens returned, instead of riding
 #     "thinking" all the way to num_ctx with nothing visible.
 #   - SYSTEM prompt nudges concise thinking + guarantees a final answer.
-# See docs/tuning-results.md for the full reasoning and empirical tests
+# See docs/tuning-results__legion5.md for the full reasoning and empirical tests
 # behind both choices.
 
 FROM qwen3.6:35b-a3b
@@ -35,7 +35,7 @@ PARAMETER num_thread 16
 # Unsloth's *non-thinking/instruct* value, but our SYSTEM prompt runs in
 # thinking mode (visible "Thinking..." output) — thinking mode should not
 # penalize legitimate repeated tokens during reasoning/code. See
-# docs/tuning-results.md ("Unsloth alignment") for the full comparison.
+# docs/tuning-results__legion5.md ("Unsloth alignment") for the full comparison.
 PARAMETER temperature 0.6
 PARAMETER top_p 0.95
 PARAMETER presence_penalty 0.0

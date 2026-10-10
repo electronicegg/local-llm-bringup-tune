@@ -5,14 +5,14 @@
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Ollama (local)",
-      "options": { "baseURL": "http://localhost:11434/v1" },
+      "options": { "baseURL": "{env:OLLAMA_BASE_URL}" },
       "models": {
         "qwen3.6:35b-a3b-64k-agentic": {
           "name": "Qwen3.6-35B-A3B (64K, agentic default)",
           // Default — chosen for prompt-processing speed (~244 tok/s vs
-          // 128k-agentic's ~137 tok/s, measured — see docs/tuning-results.md,
+          // 128k-agentic's ~137 tok/s, measured — see docs/tuning-results__legion5.md,
           // "128K feasibility"). Matches
-          // modelfiles/qwen3.6__35b-a3b-64k-agentic/Modelfile exactly
+          // modelfiles/legion5/qwen3.6__35b-a3b-64k-agentic/Modelfile exactly
           // (num_ctx 65536, num_predict 16384).
           "limit": { "context": 65536, "output": 16384 }
         },
@@ -20,9 +20,9 @@
           "name": "Qwen3.6-35B-A3B (128K, more context room)",
           // Switch to this mid-session via /model for long agentic
           // sessions or larger doc/code input — same RAM/VRAM footprint as
-          // 64K (see docs/tuning-results.md, "128K feasibility"), just
+          // 64K (see docs/tuning-results__legion5.md, "128K feasibility"), just
           // slower prompt ingestion. Matches
-          // modelfiles/qwen3.6__35b-a3b-128k-agentic/Modelfile exactly
+          // modelfiles/legion5/qwen3.6__35b-a3b-128k-agentic/Modelfile exactly
           // (num_ctx 131072, num_predict 32768).
           //
           // 32k-standalone is intentionally NOT listed here — its window

@@ -45,7 +45,7 @@ boot.** Reasoning:
   extra networking config. This also frees ~1-2GB of RAM WSL2 itself would
   otherwise reserve for a second Ollama instance.
 
-## 3. Model shortlist for 8GB VRAM / 32GB RAM
+## 3. Model shortlist for the Legion 5 Pro (8GB VRAM / 32GB RAM)
 
 Legend: **Org (Country)** · size · quant recommendation · fits fully in VRAM?
 
@@ -68,7 +68,7 @@ Legend: **Org (Country)** · size · quant recommendation · fits fully in VRAM?
 ### "Push the limits" MoE option (your Qwen3.6-35B-A3B case)
 | Model | Org (Country) | Total/Active | Quant | Notes |
 |---|---|---|---|---|
-| Qwen3-30B-A3B / Qwen3.5-35B-A3B class | Alibaba (China) | ~35B / ~3B active | Q4_K_M (~20GB) | Won't fit 8GB VRAM alone; needs GPU+RAM split. Fast per-token (only 3B active) but **large total memory footprint** — the actual cause of your instability was almost certainly `num_ctx` left too high (see tuning-guide.md), not the weights themselves. |
+| Qwen3-30B-A3B / Qwen3.5-35B-A3B class | Alibaba (China) | ~35B / ~3B active | Q4_K_M (~20GB) | Won't fit 8GB VRAM alone; needs GPU+RAM split. Fast per-token (only 3B active) but **large total memory footprint** — the actual cause of your instability was almost certainly `num_ctx` left too high (see tuning-guide__legion5.md), not the weights themselves. |
 | GPT-OSS 20B (if available in Ollama) | OpenAI (USA) | 20B / MoE | Q4_K_M | Smaller alternative MoE if you want to compare against Qwen |
 
 ### Agentic-focused note
